@@ -1,0 +1,61 @@
+/*---------------------------------------------------------------------------*
+Copyright (c) 2022, Geoffrey M. Poore
+All rights reserved.
+
+Licensed under the BSD 3-Clause License:
+http://opensource.org/licenses/BSD-3-Clause
+ *--------------------------------------------------------------------------*/
+
+
+/* Guarantee that images with transparent background are legible */
+.vscode-dark img.richOutput {
+    background-color: gainsboro;
+}
+
+/* Make Pandoc line numbers visible */
+pre.numberSource {
+    overflow: visible;
+}
+/* Adjust Pandoc line number location based on VS Code CSS */
+pre.numberSource code > span {
+    position: relative;
+    left: -5em;
+}
+/* Style Pandoc code div to get VS Code background color for line numbers */
+.vscode-light div.sourceCode {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+.vscode-dark div.sourceCode {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+.vscode-high-contrast div.sourceCode {
+	background-color: rgb(0, 0, 0);
+}
+
+/* Style stderr */
+.vscode-light pre.stderr code {
+    color: darkred;
+}
+.vscode-light code.stderr {
+    color: darkred;
+}
+.vscode-dark pre.stderr code {
+    color: lightpink;
+}
+.vscode-dark code.stderr {
+    color: lightpink;
+}
+
+/* Style errors */
+.vscode-light pre.error code {
+    color: red;
+}
+.vscode-light code.error {
+    color: red;
+}
+.vscode-dark pre.error code {
+    color: tomato;
+}
+.vscode-dark code.error {
+    color: tomato;
+}

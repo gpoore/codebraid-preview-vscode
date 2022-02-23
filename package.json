@@ -1,0 +1,125 @@
+{
+  "name": "codebraid-preview",
+  "displayName": "Codebraid Preview",
+  "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
+  "version": "0.1.0",
+  "publisher": "gpoore",
+  "homepage": "https://github.com/gpoore/vscode-codebraid-preview",
+  "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gpoore/vscode-codebraid-preview.git"
+  },
+  "engines": {
+    "vscode": "^1.63.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:codebraidPreview.startPreview",
+    "onCommand:codebraidPreview.runCodebraid",
+    "onCommand:codebraidPreview.exportDocument"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codebraidPreview.startPreview",
+        "title": "Open Codebraid Preview",
+        "category": "Codebraid preview"
+      },
+      {
+        "command": "codebraidPreview.runCodebraid",
+        "title": "Run code with Codebraid",
+        "category": "Codebraid preview"
+      },
+      {
+        "command": "codebraidPreview.exportDocument",
+        "title": "Export document with Pandoc",
+        "category": "Codebraid preview"
+      }
+    ],
+    "configuration": {
+      "title": "Codebraid Preview",
+      "properties": {
+        "codebraid.preview.maxPreviews": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of preview panels allowed concurrently."
+        },
+        "codebraid.preview.minBuildInterval": {
+          "type": "number",
+          "default": 1000,
+          "description": "Minimum interval between document builds in milliseconds."
+        },
+        "codebraid.preview.scrollPreviewWithEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scroll preview to sync with editor"
+        },
+        "codebraid.preview.scrollEditorWithPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scroll editor to sync with preview"
+        },
+        "codebraid.preview.pandoc.fromFormat": {
+          "type": "string",
+          "default": "commonmark_x",
+          "description": "Pandoc source format (`--from=FORMAT`).  Currently, only \"commonmark_x\" supports scroll sync."
+        },
+        "codebraid.preview.pandoc.options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Pandoc option."
+          },
+          "default": [],
+          "pattern": "^(?!\\s*(?:-f|--from|-r|--read))",
+          "patternErrorMessage": "Specify source format in \"pandocFromFormat\"",
+          "description": "Pandoc command-line options in array form (for example, `[\"--filter\", \"FILTER\"]`)."
+        },
+        "codebraid.preview.pandoc.previewDefaultsFile": {
+          "type": "string",
+          "default": "_codebraid_preview.yaml",
+          "pattern": "^[^\\\\/]+$",
+          "patternErrorMessage": "Must be a file name without a path to the file.",
+          "description": "Special Pandoc defaults file in document directory.  If it exists and defines \"input-files\", the preview will automatically work with all files in a multi-file document."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@types/js-yaml": "^4.0.5",
+    "js-yaml": "^4.1.0",
+    "katex": "^0.15.2"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.1.4",
+    "@types/mocha": "^9.0.0",
+    "@types/node": "14.x",
+    "@types/vscode": "^1.63.0",
+    "@typescript-eslint/eslint-plugin": "^5.1.0",
+    "@typescript-eslint/parser": "^5.1.0",
+    "@vscode/test-electron": "^1.6.2",
+    "eslint": "^8.1.0",
+    "glob": "^7.1.7",
+    "mocha": "^9.1.3",
+    "ts-loader": "^9.2.5",
+    "typescript": "^4.4.4",
+    "webpack": "^5.52.1",
+    "webpack-cli": "^4.8.0"
+  }
+}
