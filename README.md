@@ -13,6 +13,8 @@ Code execution is performed by
 [Codebraid](https://github.com/gpoore/codebraid/) using Jupyter kernels or its
 own built-in code execution system.
 
+![VS Code editor with Codebraid Preview](https://raw.githubusercontent.com/gpoore/vscode-codebraid-preview/master/readme_media/editor_with_preview.png)
+
 
 ## Features
 
