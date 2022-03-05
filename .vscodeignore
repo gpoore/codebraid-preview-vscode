@@ -2,6 +2,11 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/katex/dist/*.md
+!node_modules/katex/dist/*.txt
+!node_modules/katex/dist/*.min.js
+!node_modules/katex/dist/*.min.css
+!node_modules/katex/dist/fonts/**
 src/**
 .gitignore
 .yarnrc
