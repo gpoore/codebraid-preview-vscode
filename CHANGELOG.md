@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.2.0 (dev)
+## v0.2.0 (2022-03-05)
 
 * Fixed packaging of KaTeX so that equations are rendered correctly (#1).
 
