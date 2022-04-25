@@ -9,28 +9,13 @@
 import * as vscode from 'vscode';
 
 import PreviewPanel from './preview_panel';
+import type { ExtensionState } from './types';
 
 
 let context: vscode.ExtensionContext;
 const previews: Set<PreviewPanel> = new Set();
-let extensionState: {
-	'context': vscode.ExtensionContext,
-	'config': vscode.WorkspaceConfiguration,
-	'statusBarItems': {
-		'openPreview': vscode.StatusBarItem
-		'runCodebraid': vscode.StatusBarItem,
-		'scrollSyncMode': vscode.StatusBarItem,
-		'exportDocument': vscode.StatusBarItem,
-	},
-	'statusBarConfig': {
-		scrollPreviewWithEditor: boolean | undefined,
-		scrollEditorWithPreview: boolean | undefined,
-		setCodebraidRunning: () => void,
-		setCodebraidWaiting: () => void,
-		setDocumentExportRunning: () => void,
-		setDocumentExportWaiting: () => void,
-	}
-};
+let extensionState: ExtensionState;
+
 const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
 let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
 

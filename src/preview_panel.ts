@@ -12,24 +12,7 @@ import * as child_process from 'child_process';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
-type ExtensionState = {
-	'context': vscode.ExtensionContext,
-	'config': vscode.WorkspaceConfiguration,
-	'statusBarItems': {
-		'openPreview': vscode.StatusBarItem
-		'runCodebraid': vscode.StatusBarItem,
-		'scrollSyncMode': vscode.StatusBarItem,
-		'exportDocument': vscode.StatusBarItem,
-	},
-	'statusBarConfig': {
-		scrollPreviewWithEditor: boolean | undefined,
-		scrollEditorWithPreview: boolean | undefined,
-		setCodebraidRunning: () => void,
-		setCodebraidWaiting: () => void,
-		setDocumentExportRunning: () => void,
-		setDocumentExportWaiting: () => void,
-	}
-};
+import type { ExtensionState } from './types';
 
 
 
