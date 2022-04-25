@@ -194,6 +194,12 @@ function startPreview() {
 			}
 			continue;
 		}
+		if (editor) {
+			vscode.window.showErrorMessage(
+				'Multiple visible editors support preview. Select an editor, then start preview.'
+			);
+			return;
+		}
 		editor = possibleEditor;
 		break;
 	}
