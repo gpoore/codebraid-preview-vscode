@@ -24,6 +24,18 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "grammars": [
+      {
+        "path": "./syntaxes/julia_codeblock.json",
+        "scopeName": "markdown.julia.codebraid",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.julia": "julia"
+        }
+      }
+    ],
     "commands": [
       {
         "command": "codebraidPreview.startPreview",
