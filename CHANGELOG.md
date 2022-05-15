@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.3.0 (dev)
+## v0.3.0 (2022-05-15)
 
 * Extension setting `codebraid.preview.pandoc.options` now works (#3).
 
