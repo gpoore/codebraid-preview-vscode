@@ -14,6 +14,8 @@
 * Added temporary support for syntax highlighting in Julia code blocks, until
   VS Code Markdown grammar is updated to support this (#4).
 
+* Updated KaTeX to 0.15.3.
+
 
 
 ## v0.2.0 (2022-03-05)
