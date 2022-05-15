@@ -1,6 +1,18 @@
 # Change Log
 
 
+## v0.3.0 (dev)
+
+* Extension setting `codebraid.preview.pandoc.options` now works (#3).
+
+* Under Windows, Pandoc option values in `codebraid.preview.pandoc.options`
+  that begin with unquoted `~/` or `~\` have the `~` expanded to the user home
+  directory via `os.homedir()`.
+
+* Document export now works with file names containing spaces.
+
+
+
 ## v0.2.0 (2022-03-05)
 
 * Fixed packaging of KaTeX so that equations are rendered correctly (#1).

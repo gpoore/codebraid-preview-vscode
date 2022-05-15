@@ -10,8 +10,10 @@ import type * as vscode from 'vscode';
 
 
 export type ExtensionState = {
+	'isWindows': boolean,
 	'context': vscode.ExtensionContext,
 	'config': vscode.WorkspaceConfiguration,
+	'normalizedConfigPandocOptions': Array<string>,
 	'statusBarItems': {
 		'openPreview': vscode.StatusBarItem
 		'runCodebraid': vscode.StatusBarItem,

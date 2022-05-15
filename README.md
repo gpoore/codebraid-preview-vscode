@@ -98,8 +98,14 @@ version 0.6.0 or later.
   format (`--from=FORMAT`).  Currently, only `commonmark_x` supports scroll
   sync.
 
-* `codebraid.preview.pandoc.options` [none]:  Pandoc command-line options in
-  array form (for example, `["--filter", "FILTER"]`).
+* `codebraid.preview.pandoc.options` [none]:  Pandoc command-line options.  In
+  the settings GUI, one option per line (for example, `--filter FILTER`).  In
+  `settings.json`, an array with one option per element (for example,
+  `["--filter FILTER"]`).  Pandoc is executed within a shell, so any spaces in
+  option values must be quoted.  Depending on operating system, expansion
+  and substitution are available.  Under Windows, any unquoted option value
+  beginning with `~/` or `~\` will have the `~` expanded to the user home
+  directory via `os.homedir()`.
 
 * `codebraid.preview.pandoc.previewDefaultsFile` [`_codebraid_preview.yaml`]:
   Special Pandoc defaults file in document directory.  If it exists and

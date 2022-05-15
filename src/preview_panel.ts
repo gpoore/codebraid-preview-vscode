@@ -136,7 +136,7 @@ export default class PreviewPanel implements vscode.Disposable {
 				],
 			}
 		);
-		this.disposables.push(this.panel)
+		this.disposables.push(this.panel);
 		// Cleanup may be triggered by the webview panel being closed.  Since
 		// `retainContextWhenHidden` is true, the panel won't be disposed when
 		// it isn't visible.
@@ -504,10 +504,10 @@ ${message}
 		}
 		let maybePandocpreviewDefaults: any = yaml.load(stringDefaults);
 		if (typeof(maybePandocpreviewDefaults) !== 'object' || maybePandocpreviewDefaults === null) {
-			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)')
+			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)');
 		}
 		if (Array.isArray(maybePandocpreviewDefaults)) {
-			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)')
+			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)');
 		}
 		let maybeInputFiles: any = undefined;
 		if (maybePandocpreviewDefaults.hasOwnProperty('input-files')) {
@@ -737,6 +737,7 @@ ${message}
 		let executable: string;
 		let args: Array<string> = [];
 		executable = 'pandoc';
+		args.push(...this.extension.normalizedConfigPandocOptions);
 		args.push(...this.pandocArgs);
 		args.push(`--from=${fromFormat}`);
 		let buildProcess = child_process.execFile(
@@ -944,6 +945,7 @@ ${message}
 		let args: Array<string> = [];
 		executable = 'codebraid';
 		args.push(...this.codebraidArgs);
+		args.push(...this.extension.normalizedConfigPandocOptions);
 		args.push(...this.pandocArgs);
 		args.push(`--from=${fromFormat}`);
 		this.extension.statusBarConfig.setCodebraidRunning();
@@ -1120,9 +1122,10 @@ ${message}
 		} else {
 			executable = 'pandoc';
 		}
+		args.push(...this.extension.normalizedConfigPandocOptions);
 		args.push(`--from=${fromFormat}`);
 		args.push('--standalone');
-		args.push(...['--output', exportPath]);
+		args.push(...['--output', `"${exportPath}"`]);
 
 		this.extension.statusBarConfig.setDocumentExportRunning();
 		let buildProcess = child_process.execFile(

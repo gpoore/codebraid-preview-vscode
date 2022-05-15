@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.2.0",
+  "version": "0.3.0-dev1",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/vscode-codebraid-preview",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -73,12 +73,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "description": "Pandoc option."
+            "description": "Pandoc option in `--option`, `--option=VALUE`, or `--option VALUE` form.  Options are evaluated within a shell, so spaces must be quoted.",
+            "pattern": "^(?!-f|--from|-r|--read)(?:-[a-zA-Z]|--[a-zA-Z]+(?:-[a-zA-Z]+)*)(?:[ =](?:\"[^\"]+\"(?!\")|'[^']+'|[^ \"';&|]+(?=[\"']|$))+)?$",
+            "patternErrorMessage": "One option (including any value) per line/array element.  Options are evaluated within a shell, so spaces must be quoted.  Specify source format in \"pandocFromFormat\"."
           },
           "default": [],
-          "pattern": "^(?!\\s*(?:-f|--from|-r|--read))",
-          "patternErrorMessage": "Specify source format in \"pandocFromFormat\"",
-          "description": "Pandoc command-line options in array form (for example, `[\"--filter\", \"FILTER\"]`)."
+          "description": "Pandoc command-line options.  In the settings GUI, one option per line (for example, `--filter FILTER`).  In `settings.json`, an array with one option per element (for example, `[\"--filter FILTER\"]`).  Options are evaluated within a shell, so spaces must be quoted."
         },
         "codebraid.preview.pandoc.previewDefaultsFile": {
           "type": "string",

@@ -8,9 +8,17 @@
 
 import * as vscode from 'vscode';
 
+import * as os from 'os';
+import * as process from 'process';
+
 import PreviewPanel from './preview_panel';
 import type { ExtensionState } from './types';
 
+
+
+
+const homedir = os.homedir();
+const isWindows = process.platform === 'win32';
 
 let context: vscode.ExtensionContext;
 const previews: Set<PreviewPanel> = new Set();
@@ -18,6 +26,8 @@ let extensionState: ExtensionState;
 
 const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
 let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
+
+
 
 
 export function activate(extensionContext: vscode.ExtensionContext) {
@@ -63,8 +73,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		11
 	);
 	extensionState = {
+		isWindows: isWindows,
 		context: context,
 		config: config,
+		normalizedConfigPandocOptions: normalizePandocOptions(config),
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
 			runCodebraid: runCodebraidStatusBarItem,
@@ -111,7 +123,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	scrollSyncModeStatusBarItem.hide();
 
 	vscode.workspace.onDidChangeConfiguration(
-		() => {extensionState.config = vscode.workspace.getConfiguration('codebraid.preview');},
+		() => {
+			extensionState.config = vscode.workspace.getConfiguration('codebraid.preview');
+			extensionState.normalizedConfigPandocOptions = normalizePandocOptions(extensionState.config);
+		},
 		null,
 		context.subscriptions
 	);
@@ -143,6 +158,35 @@ export function deactivate() {
 	if (checkPreviewVisibleInterval) {
 		clearInterval(checkPreviewVisibleInterval);
 	}
+}
+
+
+// This is a copy of package.json: codebraid.preview.pandoc.options.items.pattern
+// with capture groups added.
+const optionValidateRegex = new RegExp(
+	"^(?!-f|--from|-r|--read)(-[a-zA-Z]|--[a-zA-Z]+(?:-[a-zA-Z]+)*)(?:([ =])(\"[^\"]+\"(?!\")|'[^']+'|[^ \"';&|]+(?=[\"']|$))+)?$"
+);
+function normalizePandocOptions(config: vscode.WorkspaceConfiguration) : Array<string> {
+	// Validate options from config.pandoc.options.  Under Windows, perform
+	// expansion of ~ to home directory.  That isn't needed under other
+	// operating systems since commands are executed via the shell.
+	const normalizedOptions: Array<string> = [];
+	for (const option of config.pandoc.options) {
+		const match: Array<string> | null = option.match(optionValidateRegex);
+		if (!match) {
+			vscode.window.showErrorMessage(`Invalid setting in codebraid.preview.pandoc.options:  ${option}`);
+			return [];
+		}
+		if (!isWindows || !match[3] || !(match[3].startsWith('~/') || match[3].startsWith('~\\'))) {
+			normalizedOptions.push(option);
+			continue;
+		}
+		const opt = match[1];
+		const sep = match[2];
+		const val = `"${homedir}"${match[3].slice(1)}`;
+		normalizedOptions.push(`${opt}${sep}${val}`);
+	}
+	return normalizedOptions;
 }
 
 
@@ -281,6 +325,13 @@ function exportDocument() {
 			return;
 		}
 		let savePath = saveUri.fsPath;
+		if (/[\u0000-\u001F\u007F\u0080—\u009F*?"<>|$`!]|(?<!^[a-zA-z]):(?![\\/])/.test(savePath)) {
+			// Don't allow command characters, characters invalid in Windows
+			// file names, or characters that cause interpolation when
+			// double-quoted in Linux shells.
+			vscode.window.showErrorMessage(`Cannot export file; invalid or unsupported file name: "${savePath}"`);
+			return;
+		}
 		preview.exportDocument(savePath);
 	});
 }
