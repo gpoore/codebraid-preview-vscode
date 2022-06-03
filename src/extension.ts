@@ -13,9 +13,11 @@ import * as process from 'process';
 
 import PreviewPanel from './preview_panel';
 import type { ExtensionState } from './types';
+import {minCodebraidVersion, hasCompatibleCodebraid} from './check_codebraid';
 
 
 
+const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
 
 const homedir = os.homedir();
 const isWindows = process.platform === 'win32';
@@ -23,8 +25,6 @@ const isWindows = process.platform === 'win32';
 let context: vscode.ExtensionContext;
 const previews: Set<PreviewPanel> = new Set();
 let extensionState: ExtensionState;
-
-const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
 let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
 
 
@@ -74,6 +74,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	);
 	extensionState = {
 		isWindows: isWindows,
+		minCodebraidVersion: minCodebraidVersion,
+		hasCompatibleCodebraid: hasCompatibleCodebraid(),
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),

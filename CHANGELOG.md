@@ -3,6 +3,12 @@
 
 ## v0.4.0 (dev)
 
+* When the extension loads, it now checks whether Codebraid is installed and
+  determines the Codebraid version.  Loading a Codebraid-compatible document
+  now results in an error message if Codebraid is not installed or if the
+  version available is not compatible with Codebraid Preview.  Plain preview
+  without code execution still works automatically in these cases.
+
 * Added [Codicons](https://github.com/microsoft/vscode-codicons) for
   displaying messages in the preview webview.
 

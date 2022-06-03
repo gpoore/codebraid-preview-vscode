@@ -11,6 +11,8 @@ import type * as vscode from 'vscode';
 
 export type ExtensionState = {
 	'isWindows': boolean,
+	'minCodebraidVersion': string,
+	'hasCompatibleCodebraid': boolean | undefined,
 	'context': vscode.ExtensionContext,
 	'config': vscode.WorkspaceConfiguration,
 	'normalizedConfigPandocOptions': Array<string>,
