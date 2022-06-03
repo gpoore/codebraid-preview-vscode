@@ -1,6 +1,13 @@
 # Change Log
 
 
+## v0.4.0 (dev)
+
+* Added [Codicons](https://github.com/microsoft/vscode-codicons) for
+  displaying messages in the preview webview.
+
+
+
 ## v0.3.0 (2022-05-15)
 
 * Extension setting `codebraid.preview.pandoc.options` now works (#3).
