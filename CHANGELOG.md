@@ -3,6 +3,9 @@
 
 ## v0.4.0 (dev)
 
+* Added basic support for `filters` in `_codebraid_preview.yaml` (#2).  Spaces
+  and some other characters are not currently supported in filter names.
+
 * When the extension loads, it now checks whether Codebraid is installed and
   determines the Codebraid version.  Loading a Codebraid-compatible document
   now results in an error message if Codebraid is not installed or if the
