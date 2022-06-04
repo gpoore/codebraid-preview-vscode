@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.4.0 (dev)
+## v0.4.0 (2022-06-04)
 
 * Added support for `--only-code-output` from Codebraid v0.7.0.  The preview
   now refreshes automatically for Codebraid documents, displaying all code
