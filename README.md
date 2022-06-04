@@ -11,7 +11,9 @@ Codebraid Preview provides optional support for executing code blocks and
 inline code to embed their output in the preview and in exported documents.
 Code execution is performed by
 [Codebraid](https://github.com/gpoore/codebraid/) using Jupyter kernels or its
-own built-in code execution system.
+own built-in code execution system.  When code is running, the preview still
+updates whenever the document is modified, displaying all code output that is
+currently available.  The preview always remains live.
 
 ![VS Code editor with Codebraid Preview](https://raw.githubusercontent.com/gpoore/vscode-codebraid-preview/master/readme_media/editor_with_preview.png)
 
@@ -72,11 +74,12 @@ own built-in code execution system.
   then click the "Codebraid" button in the status bar (bottom right) or use
   the "Run code with Codebraid" command (`Ctrl+Shift+P`, then type command).
 
-  Note that the document will take longer to build when using Codebraid, and
-  the preview will not automatically refresh when you make changes, like it
-  does when you are just using Pandoc.  An upcoming version of Codebraid is
-  expected to allow automatic refresh with performance nearly the same as
-  using Pandoc by itself.
+  When you first load a document that uses Codebraid, any cached code output
+  will automatically be loaded and displayed in the document.  The preview
+  will automatically refresh when you make changes to the document outside of
+  executed code.  However, code never runs automatically.  Code execution
+  requires clicking the "Codebraid" button or using the "Run code with
+  Codebraid" command.
 
 
 ## Requirements
@@ -108,11 +111,18 @@ version 0.6.0 or later.
   directory via `os.homedir()`.
 
 * `codebraid.preview.pandoc.previewDefaultsFile` [`_codebraid_preview.yaml`]:
-  Special Pandoc defaults file in document directory.  If it exists and
-  defines `input-files`, the preview will automatically work with all files
-  in a multi-file document.  Currently, `input-files` and `from` are the only
-  options that are supported; the full range of Pandoc defaults options is not
-  supported.
+  Special Pandoc defaults file in document directory that is used for preview
+  purposes.  If it exists and defines `input-files`, the preview will
+  automatically work with all files in a multi-file document.  Currently,
+  `input-files`, `from`, and `filters` are the only options that are
+  supported; the full range of Pandoc defaults options is not yet supported.
+  Spaces and some other characters are not currently supported in filter
+  names.
+
+  The preview defaults file is ignored if it defines `input-files` and the
+  current document is not in `input-files`.  If the current document is in
+  `input-files`, or if `input-files` is not defined, then the preview defaults
+  file is used.
 
 
 ## Security

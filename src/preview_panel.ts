@@ -738,7 +738,7 @@ ${message}
 				}
 			}
 		);
-		vscode.window.showErrorMessage(`${this.currentCodebraidOutput.size} - ${this.oldCodebraidOutput.size}`);
+
 		this.scrollSyncOffset = 0;
 		let includingCodebraidOutput: boolean;
 		if (this.usingCodebraid && (this.currentCodebraidOutput.size > 0 || this.oldCodebraidOutput.size > 0)) {
@@ -751,6 +751,7 @@ ${message}
 				`---`,
 				`codebraid_meta:`,
 				`  commonmark: ${fromFormatIsCommonmark}`,
+				`  codebraid_running: ${this.codebraidIsInProgress}`,
 				`codebraid_output:\n`,
 			].join('\n'));
 			// Offset ignores `---` for now, since document could start with
@@ -884,7 +885,7 @@ ${message}
 				yamlArray = Array(length).fill(`  - placeholder: true\n`);
 			} else {
 				yamlArray = [];
-				for (const [oldIndex, oldYaml] of yamlArray.entries()) {
+				for (const [oldIndex, oldYaml] of oldYamlArray.entries()) {
 					if (oldIndex === length) {
 						break;
 					}
@@ -935,6 +936,8 @@ ${message}
 		}
 
 		this.codebraidIsInProgress = true;
+		// Update preview to start any progress indicators, etc.
+		this.update();
 
 		// Collect all data that depends on config and preview defaults so
 		// that everything from here onward isn't affected by config or

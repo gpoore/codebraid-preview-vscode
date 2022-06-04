@@ -59,3 +59,39 @@ pre.numberSource code > span {
 .vscode-dark code.error {
     color: tomato;
 }
+
+/* Code update */
+.codebraid-output-missing:before,
+.codebraid-output-waiting:before,
+.codebraid-output-stale:before,
+.codebraid-output-old:before {
+    font-family: "codicon";
+    font-size: calc(var(--markdown-font-size, 14px)*1.5);
+    content: "\ea77";
+    font-weight: 500;
+    color: cornflowerblue;
+    float: right;
+    position: relative;
+    margin-right: -1.5em;
+}
+
+.codebraid-running.codebraid-output-missing:before,
+.codebraid-running.codebraid-output-waiting:before,
+.codebraid-running.codebraid-output-stale:before,
+.codebraid-running.codebraid-output-old:before {
+    font-family: "codicon";
+    font-size: calc(var(--markdown-font-size, 14px)*1.5);
+    content: "\ea77";
+    font-weight: 400;
+    animation: codebraid-running 1s infinite;
+    float: right;
+    position: relative;
+    margin-right: -1.5em;
+}
+
+
+@keyframes codebraid-running {
+    0% { color: skyblue; transform: rotate(0deg);}
+    50% { color: cornflowerblue; transform: rotate(90deg);}
+    100% { color: steelblue; transform: rotate(180deg);}
+  }
