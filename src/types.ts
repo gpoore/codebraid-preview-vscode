@@ -25,7 +25,8 @@ export type ExtensionState = {
 	'statusBarConfig': {
 		scrollPreviewWithEditor: boolean | undefined,
 		scrollEditorWithPreview: boolean | undefined,
-		setCodebraidRunning: () => void,
+		setCodebraidRunningExecute: () => void,
+		setCodebraidRunningNoExecute: () => void,
 		setCodebraidWaiting: () => void,
 		setDocumentExportRunning: () => void,
 		setDocumentExportWaiting: () => void,

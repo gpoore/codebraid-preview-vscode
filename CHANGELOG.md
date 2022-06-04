@@ -3,6 +3,12 @@
 
 ## v0.4.0 (dev)
 
+* Added support for `--only-code-output` from Codebraid v0.7.0.  The preview
+  now refreshes automatically for Codebraid documents, displaying all code
+  output that is currently available.  The build process is now nearly as fast
+  as plain Pandoc.  Code execution still requires clicking the "Codebraid"
+  button or using the "Run code with Codebraid" command.
+
 * Added basic support for `filters` in `_codebraid_preview.yaml` (#2).  Spaces
   and some other characters are not currently supported in filter names.
 
@@ -14,6 +20,12 @@
 
 * Added [Codicons](https://github.com/microsoft/vscode-codicons) for
   displaying messages in the preview webview.
+
+* Fixed a bug that prevented error messages from stderr from being correctly
+  converted to literal text in HTML.
+
+* Scroll sync is now supported for all CommonMark-based formats (`commonmark`,
+  `commonmark_x`, `gfm`), not just `commonmark_x`.
 
 
 

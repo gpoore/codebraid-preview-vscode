@@ -10,9 +10,10 @@ import * as vscode from 'vscode';
 
 import * as child_process from 'child_process';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 
 import type { ExtensionState } from './types';
+import PandocPreviewDefaults from './pandoc_preview_defaults';
+import {countNewlines} from './util';
 
 
 
@@ -58,23 +59,18 @@ export default class PreviewPanel implements vscode.Disposable {
 	// names are stored in an `Array` rather than a `Set` to allow for a
 	// single file to be included multiple times.
 	fileNames: Array<string>;
+	fromFormat: string;
+	pandocPreviewDefaults: PandocPreviewDefaults;
 	// Track visible editor that is relevant.
 	visibleEditor: vscode.TextEditor | undefined;
 	// Track recent visible files to determine which visible editor to sync
 	// with.  It may be worth tracking `viewColumn` as well eventually.
-	currentFileName: string | undefined;
+	currentFileName: string;
 	previousFileName: string | undefined;
-	// Pandoc defaults type: <exists_valid> | <exists_invalid> | <none>
-	pandocpreviewDefaults: {[key: string]: any} | null | undefined;
-	// In addition to the most the recent Pandoc defaults, keep the file name
-	// and the raw string from the defaults file to detect changes and avoid
-	// unnecessary YAML loading.
-	pandocpreviewDefaultsFileName: string | undefined;
-	pandocpreviewDefaultsString: string | undefined;
 
 	// Display
 	// -------
-	panel: vscode.WebviewPanel;
+	panel: vscode.WebviewPanel | undefined;
 	resourceWebviewUris: Record<string, vscode.Uri>;
 	resourcePaths: Record<string, string>;
 	baseTag: string;
@@ -90,15 +86,21 @@ export default class PreviewPanel implements vscode.Disposable {
 
 	// Subprocess
 	// ----------
-	pandocArgs: Array<string>;
+	pandocPreviewArgs: Array<string>;
+	pandocWithCodebraidOutputArgs: Array<string>;
+	pandocExportArgs: Array<string>;
 	codebraidArgs: Array<string>;
 	buildProcessOptions: child_process.ExecFileOptions;
+	codebraidProcessOptions: child_process.SpawnOptions;
 	lastBuildTime: number;
 	needsBuild: boolean;
 	buildIsScheduled: boolean;
 	buildIsInProgress: boolean;
-	codebraidProcess: child_process.ChildProcess | undefined;
 	usingCodebraid: boolean;
+	codebraidIsInProgress: boolean;
+	didCheckInitialCodebraidCache: boolean;
+	oldCodebraidOutput: Map<string, Array<string>>;
+	currentCodebraidOutput: Map<string, Array<string>>;
 
 	constructor(editor: vscode.TextEditor, extension: ExtensionState) {
 		this.disposables = [];
@@ -108,6 +110,8 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.cwd = path.dirname(editor.document.uri.fsPath);
 		this.fileNames = [];
 		this.fileNames.push(editor.document.fileName);
+		this.fromFormat = extension.config.pandoc.fromFormat;
+		this.pandocPreviewDefaults = new PandocPreviewDefaults(this);
 		this.visibleEditor = editor;
 		this.currentFileName = editor.document.fileName;
 		vscode.window.onDidChangeActiveTextEditor(
@@ -130,9 +134,10 @@ export default class PreviewPanel implements vscode.Disposable {
 				retainContextWhenHidden: true,
 				localResourceRoots: [
 					vscode.Uri.file(this.cwd),
-					vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist')),
 					vscode.Uri.file(this.extension.context.asAbsolutePath('media')),
 					vscode.Uri.file(this.extension.context.asAbsolutePath('scripts')),
+					vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist')),
+					vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist')),
 				],
 			}
 		);
@@ -141,13 +146,19 @@ export default class PreviewPanel implements vscode.Disposable {
 		// `retainContextWhenHidden` is true, the panel won't be disposed when
 		// it isn't visible.
 		this.panel.onDidDispose(
-			() => {this.dispose();},
+			() => {
+				this.panel = undefined;
+				this.dispose();
+			},
 			this,
 			this.disposables
 		);
 		this.resourceWebviewUris = {
 			katex: this.panel.webview.asWebviewUri(
 				vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist'))
+			),
+			vscodeCodicon: this.panel.webview.asWebviewUri(
+				vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist/codicon.css'))
 			),
 			vscodeCss: this.panel.webview.asWebviewUri(
 				vscode.Uri.file(this.extension.context.asAbsolutePath('media/vscode-markdown.css'))
@@ -161,6 +172,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		};
 		this.resourcePaths = {
 			pandocSourcePosLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-sync.lua'),
+			pandocCodebraidOutputLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
 		this.contentSecurityOptions = {
@@ -170,7 +182,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			'script-src': [`${this.panel.webview.cspSource}`, `'unsafe-inline'`],
 		};
 		let contentSecurityContent: Array<string> = [];
-		for (let src in this.contentSecurityOptions) {
+		for (const src in this.contentSecurityOptions) {
 			contentSecurityContent.push(`${src} ${this.contentSecurityOptions[src].join(' ')};`);
 		}
 		this.contentSecurityTag = [
@@ -186,25 +198,39 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.scrollSyncMapMaxLine = 0;
 		this.showUpdatingMessage();
 
-		this.pandocArgs = [
+		this.pandocPreviewArgs = [
 			`--standalone`,
 			`--lua-filter="${this.resourcePaths.pandocSourcePosLuaFilter}"`,
 			`--css=${this.resourceWebviewUris.vscodeCss}`,
+			`--css=${this.resourceWebviewUris.vscodeCodicon}`,
 			`--css=${this.resourceWebviewUris.codebraidCss}`,
 			`--katex=${this.resourceWebviewUris.katex}/`,
 			`--to=html`,
 		];
-		this.codebraidArgs = ['pandoc'];
+		this.pandocWithCodebraidOutputArgs = [
+			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputLuaFilter}"`,
+		];
+		this.pandocExportArgs = [
+			`--standalone`,
+		];
+		this.codebraidArgs = ['pandoc', '--only-code-output', 'codebraid_preview'];
 		this.buildProcessOptions = {
 			maxBuffer: 1024*1024*16, // = <default>*16 = 16_777_216 bytes
 			cwd: this.cwd,
 			shell: true // not ideal, but consistently 2-5x faster
 		};
+		this.codebraidProcessOptions = {
+			cwd: this.cwd,
+			shell: true,
+		};
+		this.didCheckInitialCodebraidCache = false;
+		this.oldCodebraidOutput = new Map();
+		this.currentCodebraidOutput = new Map();
 		this.lastBuildTime = 0;
 		this.needsBuild = true;
 		this.buildIsScheduled = false;
 		this.buildIsInProgress = false;
-		this.codebraidProcess = undefined;
+		this.codebraidIsInProgress = false;
 		this.usingCodebraid = false;
 
 		vscode.workspace.onDidChangeTextDocument(
@@ -225,7 +251,13 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.disposables
 		);
 
-		this.update(() => this.onDidChangePreviewEditor(editor));
+		// Need to wait until any preview defaults file is read and processed
+		// before creating initial preview.
+		this.pandocPreviewDefaults.update().then(() => {
+			this.update().then(() => {
+				this.onDidChangePreviewEditor(editor);
+			});
+		});
 	}
 
 	registerOnDisposeCallback(callback: () => void) {
@@ -233,16 +265,14 @@ export default class PreviewPanel implements vscode.Disposable {
 	}
 
 	dispose() {
-		while (true) {
-			let disposable = this.disposables.pop();
-			if (disposable) {
-				disposable.dispose();
-			} else {
-				break;
-			}
+		this.panel = undefined;
+		for (const disposable of this.disposables) {
+			disposable.dispose();
 		}
+		this.disposables.length = 0;
 		if (this._onDisposeExtensionCallback) {
 			this._onDisposeExtensionCallback();
+			this._onDisposeExtensionCallback = undefined;
 		}
 	}
 
@@ -275,6 +305,9 @@ ${message}
 	}
 
 	showUpdatingMessage() {
+		if (!this.panel) {
+			return;
+		}
 		this.panel.webview.html = this.formatMessage(
 			'Updating Codebraid Preview...',
 			'<h1>Updating Codebraid Preview...</h1>'
@@ -282,14 +315,17 @@ ${message}
 	}
 
 	convertStringToLiteralHtml(s: string) {
-		return s.replace('&', '&amp;')
-				.replace('<', '&lt;')
-				.replace('>', '&gt;')
-				.replace('"', '&quot;')
-				.replace("'", '&apos;');
+		return s.replaceAll('&', '&amp;')
+				.replaceAll('<', '&lt;')
+				.replaceAll('>', '&gt;')
+				.replaceAll('"', '&quot;')
+				.replaceAll("'", '&apos;');
 	}
 
 	onDidChangeActiveTextEditor(editor: vscode.TextEditor | undefined) {
+		if (!this.panel) {
+			return;
+		}
 		if (!editor) {
 			this.onDidChangeVisibleTextEditors(vscode.window.visibleTextEditors);
 			return;
@@ -307,8 +343,11 @@ ${message}
 	}
 
 	onDidChangeVisibleTextEditors(editors: readonly vscode.TextEditor[]) {
+		if (!this.panel) {
+			return;
+		}
 		this.visibleEditor = undefined;
-		for (let editor of editors) {
+		for (const editor of editors) {
 			if (editor.document.uri.scheme === 'file' && editor.document.fileName === this.currentFileName) {
 				this.visibleEditor = editor;
 				this.onDidChangePreviewEditor(editor);
@@ -319,7 +358,7 @@ ${message}
 			return;
 		}
 		if (this.previousFileName) {
-			for (let editor of editors) {
+			for (const editor of editors) {
 				if (editor.document.uri.scheme === 'file' && editor.document.fileName === this.previousFileName) {
 					this.visibleEditor = editor;
 					this.currentFileName = this.previousFileName;
@@ -329,7 +368,7 @@ ${message}
 				}
 			}
 		}
-		for (let editor of editors) {
+		for (const editor of editors) {
 			if (editor.document.uri.scheme === 'file' && this.fileNames.indexOf(editor.document.fileName) !== -1) {
 				this.visibleEditor = editor;
 				this.previousFileName = this.currentFileName;
@@ -341,16 +380,24 @@ ${message}
 	}
 
 	onDidChangeTextDocument(event: vscode.TextDocumentChangeEvent) {
+		if (!this.panel) {
+			return;
+		}
 		if (event.contentChanges.length !== 0 && event.document.uri.scheme === 'file') {
 			if (this.fileNames.indexOf(event.document.fileName) !== -1) {
 				this.update();
-			} else if (event.document.fileName === this.pandocpreviewDefaultsFileName) {
-				this.update();
+			} else if (event.document.fileName === this.pandocPreviewDefaults.fileName) {
+				this.pandocPreviewDefaults.update().then(() => {
+					this.update();
+				});
 			}
 		}
 	}
 
 	onDidChangeTextEditorVisibleRanges(event: vscode.TextEditorVisibleRangesChangeEvent) {
+		if (!this.panel) {
+			return;
+		}
 		if (event.visibleRanges.length === 0 || this.isScrollingEditorWithPreview) {
 			return;
 		}
@@ -386,6 +433,9 @@ ${message}
 	}
 
 	onDidChangePreviewEditor(editor: vscode.TextEditor) {
+		if (!this.panel) {
+			return;
+		}
 		// Scroll preview when switching to a new editor for the first time.
 		if (this.isScrollingEditorWithPreview) {
 			return;
@@ -419,6 +469,9 @@ ${message}
 	}
 
 	async onDidReceiveMessage(message: any) {
+		if (!this.panel) {
+			return;
+		}
 		switch (message.command) {
 			case 'codebraidPreview.scrollEditor': {
 				if (!this.visibleEditor || !this.sourceSupportsScrollSync) {
@@ -448,6 +501,9 @@ ${message}
 						let editor = await vscode.window.showTextDocument(document, column);
 						this.visibleEditor = editor;
 					}
+				}
+				if (!this.panel) {
+					return;
 				}
 				scrollStartLine -= 1; // Webview is one-indexed
 				if (scrollStartLine < 0) {
@@ -494,64 +550,12 @@ ${message}
 		}
 	}
 
-	loadStringPandocpreviewDefaults(stringDefaults: string) : {[key: string]: any} {
-		// Given a Pandoc defaults file in string form, load it and check
-		// the validity of the keys that may be used for preview.  Any errors
-		// are handled by the code calling this method.
-		if (stringDefaults.charCodeAt(0) === 0xFEFF) {
-			// Drop BOM
-			stringDefaults = stringDefaults.slice(1);
-		}
-		let maybePandocpreviewDefaults: any = yaml.load(stringDefaults);
-		if (typeof(maybePandocpreviewDefaults) !== 'object' || maybePandocpreviewDefaults === null) {
-			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)');
-		}
-		if (Array.isArray(maybePandocpreviewDefaults)) {
-			throw new Error('Top level of YAML must be an associative array (that is, a map or dict or hash)');
-		}
-		let maybeInputFiles: any = undefined;
-		if (maybePandocpreviewDefaults.hasOwnProperty('input-files')) {
-			maybeInputFiles = maybePandocpreviewDefaults['input-files'];
-			if (!Array.isArray(maybeInputFiles)) {
-				throw new Error('Key "input-files" must map to a list of strings');
-			}
-			if (maybeInputFiles.length === 0) {
-				throw new Error('Key "input-files" must map to a non-empty list of strings');
-			}
-			for (let x of maybeInputFiles) {
-				if (typeof(x) !== 'string') {
-					throw new Error('Key "input-files" must map to a list of strings');
-				}
-				if (!x.match('^[^\\\\/]+$')) {
-					throw new Error('Key "input-files" must map to a list of file names in the document directory');
-				}
-			}
-		}
-		let maybeInputFile: any = undefined;
-		if (maybePandocpreviewDefaults.hasOwnProperty('input-file')) {
-			maybeInputFile = maybePandocpreviewDefaults['input-file'];
-			if (typeof(maybeInputFile) !== 'string') {
-				throw new Error('Key "input-file" must be a string');
-			}
-		}
-		if (maybeInputFile && maybeInputFiles) {
-			throw new Error('Cannot have both keys "input-files" and "input-file"');
-		}
-		if (maybePandocpreviewDefaults.hasOwnProperty('from')) {
-			let maybeFrom = maybePandocpreviewDefaults['from'];
-			if (typeof(maybeFrom) !== 'string') {
-				throw new Error('Key "from" must be a string');
-			}
-			if (!maybeFrom.match('^[a-z_]+(?:[+-][a-z_]+)*$')) {
-				throw new Error('Key "from" has incorrect value');
-			}
-		}
-		return maybePandocpreviewDefaults;
-	}
-
 	switchEditor(editor: vscode.TextEditor) {
 		// This is called by `startPreview()`, which checks the editor for
 		// validity first.
+		if (!this.panel) {
+			return;
+		}
 		this.visibleEditor = editor;
 		if (!this.panel.visible) {
 			this.panel.reveal(vscode.ViewColumn.Beside);
@@ -563,11 +567,54 @@ ${message}
 		this.onDidChangePreviewEditor(editor);
 	}
 
-	async update(callback?: () => void) {
-		if (this.usingCodebraid) {
+
+	setWebviewHTML(html: string) {
+		if (!this.panel) {
 			return;
 		}
-		if (this.disposables.length === 0) {
+		this.panel.webview.html = html.replace(
+			`<head>`,
+			`<head>\n  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}`
+		);
+	}
+
+
+	async getFileTexts(fileNames: Array<string>, fromFormatIsCommonmark: boolean | undefined) : Promise<Array<string> | undefined> {
+		let fileTexts: Array<string> = [];
+		for (let fileName of fileNames) {
+			let fileText: string;
+			try {
+				let fileDocument = await vscode.workspace.openTextDocument(fileName);
+				fileText = fileDocument.getText();
+			} catch {
+				if (!this.panel) {
+					return;
+				}
+				vscode.window.showErrorMessage(`Missing input file "${fileName}"`);
+				return undefined;
+			}
+			fileTexts.push(fileText);
+			if (!this.usingCodebraid && fromFormatIsCommonmark !== undefined) {
+				if (fromFormatIsCommonmark) {
+					if (fileText.indexOf('.cb-') !== -1) {
+						this.usingCodebraid = true;
+					}
+				} else if (fileText.indexOf('.cb-') !== -1 || fileText.indexOf('.cb.') !== -1) {
+					this.usingCodebraid = true;
+				}
+			}
+		}
+		return fileTexts;
+	}
+
+
+	isFromFormatCommonMark(format: string) : boolean {
+		return /^(?:commonmark_x|commonmark|gfm)(?:$|[+-])/.test(format);
+	}
+
+
+	async update() {
+		if (!this.panel) {
 			this.needsBuild = false;
 			return;
 		} else {
@@ -604,185 +651,152 @@ ${message}
 			return;
 		}
 
+		if (!this.pandocPreviewDefaults.isValid) {
+			this.pandocPreviewDefaults.showErrorMessage();
+			return;
+		}
 		this.buildIsInProgress = true;
 		this.needsBuild = false;
 		this.lastBuildTime = timeNow;
 
-		let currentPandocpreviewDefaultsFile = this.extension.config.pandoc.previewDefaultsFile;
-		let currentPandocpreviewDefaultsString: string | undefined;
-		let currentPandocpreviewDefaultsFileName: string | undefined;
-		try {
-			let pandocpreviewDefaultsDocument = await vscode.workspace.openTextDocument(
-				path.join(this.cwd, currentPandocpreviewDefaultsFile)
-			);
-			currentPandocpreviewDefaultsFileName = pandocpreviewDefaultsDocument.fileName;
-			currentPandocpreviewDefaultsString = pandocpreviewDefaultsDocument.getText();
-		} catch {
-		}
-		if (!currentPandocpreviewDefaultsFileName || !currentPandocpreviewDefaultsString) {
-			this.pandocpreviewDefaults = undefined;
-			this.pandocpreviewDefaultsFileName = undefined;
-			this.pandocpreviewDefaultsString = undefined;
-		} else if (currentPandocpreviewDefaultsString === this.pandocpreviewDefaultsString) {
-			this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-			if (this.pandocpreviewDefaults === null) {
-				// Invalid defaults.  Webview will already show error from
-				// previous build attempt.
-				this.buildIsInProgress = false;
-				return;
-			}
-		} else {
-			let currentPandocpreviewDefaults: {[key: string]: any};
-			try {
-				currentPandocpreviewDefaults = this.loadStringPandocpreviewDefaults(currentPandocpreviewDefaultsString);
-			} catch (e) {
-				this.pandocpreviewDefaults = null;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-				this.panel.webview.html = this.formatMessage(
-					'Codebraid Preview',
-					[
-						'<h1 style="color:red;">Codebraid Preview Error</h1>',
-						'<h2>Invalid Pandoc defaults file</h2>',
-						'<p>For file <code>',
-						this.convertStringToLiteralHtml(currentPandocpreviewDefaultsFileName),
-						'</code>:</p>',
-						'<pre style="white-space: pre-wrap;">',
-						this.convertStringToLiteralHtml(String(e)),
-						'</pre>',
-						''
-					].join('\n')
-				);
-				this.buildIsInProgress = false;
-				this.sourceSupportsScrollSync = false;
-				return;
-			}
-			let inputFiles: Array<string> | undefined = undefined;
-			if (currentPandocpreviewDefaults.hasOwnProperty('input-files')) {
-				inputFiles = currentPandocpreviewDefaults['input-files'];
-			} else if (currentPandocpreviewDefaults.hasOwnProperty('input-file')) {
-				inputFiles = [currentPandocpreviewDefaults['input-file']];
-			}
-			let defaultsApply: boolean = false;
-			let currentFileNames: Array<string> = [];
-			if (inputFiles) {
-				for (let inputFile of inputFiles) {
-					let inputFileName = vscode.Uri.file(path.join(this.cwd, inputFile)).fsPath;
-					currentFileNames.push(inputFileName);
-					if (this.fileNames.indexOf(inputFileName) !== -1) {
-						defaultsApply = true;
-					}
-				}
-			}
-			if (defaultsApply) {
-				this.fileNames = currentFileNames;
-				this.pandocpreviewDefaults = currentPandocpreviewDefaults;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-			} else {
-				this.pandocpreviewDefaults = undefined;
-				this.pandocpreviewDefaultsFileName = undefined;
-				this.pandocpreviewDefaultsString = undefined;
-			}
-		}
+		// Collect all data that depends on config and preview defaults so
+		// that everything from here onward isn't affected by config or
+		// preview changes during await's.
+		let fileNames = this.fileNames;
+		let fromFormat = this.fromFormat;
+		let filters = this.pandocPreviewDefaults.filters;
+		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
-		let fromFormat: string;
-		if (!this.pandocpreviewDefaults || !this.pandocpreviewDefaults.hasOwnProperty('from')) {
-			fromFormat = this.extension.config.pandoc.fromFormat;
-		} else {
-			fromFormat = this.pandocpreviewDefaults['from'];
-		}
-		let fromFormatIsCommonmarkX: boolean;
-		if (/^commonmark_x(?:$|[+-])/.test(fromFormat)) {
+		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
+		this.sourceSupportsScrollSync = fromFormatIsCommonmark;
+		if (fromFormatIsCommonmark) {
 			fromFormat += '+sourcepos';
-			fromFormatIsCommonmarkX = true;
-			this.sourceSupportsScrollSync = true;
-		} else {
-			fromFormatIsCommonmarkX = false;
-			this.sourceSupportsScrollSync = false;
 		}
 
-		let fileTexts: Array<string> = [];
-		let useCodebraid: boolean = false;
-		for (let fileName of this.fileNames) {
-			let fileDocument: vscode.TextDocument;
-			let fileText: string;
-			try {
-				fileDocument = await vscode.workspace.openTextDocument(fileName);
-				fileText = fileDocument.getText();
-			} catch {
-				this.panel.webview.html = this.formatMessage(
-					'Codebraid Preview',
-					[
-						'<h1 style="color:red;">Codebraid Preview Error</h1>',
-						`<h2>Missing input file: <code>${fileName}</code></h2>`,
-						''
-					].join('\n')
-				);
-				this.buildIsInProgress = false;
-				this.sourceSupportsScrollSync = false;
-				return;
-			}
-			fileTexts.push(fileText);
-			if (!useCodebraid) {
-				if (fromFormatIsCommonmarkX) {
-					if (fileText.indexOf('.cb-') !== -1) {
-						useCodebraid = true;
-					}
-				} else if (fileText.indexOf('.cb-') !== -1 || fileText.indexOf('.cb.') !== -1) {
-					useCodebraid = true;
+		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, fromFormatIsCommonmark);
+		if (!maybeFileTexts) {
+			this.buildIsInProgress = false;
+			this.sourceSupportsScrollSync = false;
+			return;
+		}
+		const fileTexts: Array<string> = maybeFileTexts;
+
+
+		if (this.usingCodebraid && !this.didCheckInitialCodebraidCache && !this.codebraidIsInProgress) {
+			this.didCheckInitialCodebraidCache = true;
+			await this.runCodebraidNoExecute();
+		}
+
+		const executable: string = 'pandoc';
+		const args: Array<string> = [];
+		args.push(...normalizedConfigPandocOptions);
+		if (filters) {
+			for (const filter of filters) {
+				if (filter.endsWith('.lua')) {
+					args.push(...['--lua-filter', filter]);
+				} else {
+					args.push(...['--filter', filter]);
 				}
 			}
 		}
-		let executable: string;
-		let args: Array<string> = [];
-		executable = 'pandoc';
-		args.push(...this.extension.normalizedConfigPandocOptions);
-		args.push(...this.pandocArgs);
+		args.push(...this.pandocPreviewArgs);
+		if (this.usingCodebraid) {
+			args.push(...this.pandocWithCodebraidOutputArgs);
+		}
 		args.push(`--from=${fromFormat}`);
+
 		let buildProcess = child_process.execFile(
 			executable,
 			args,
 			this.buildProcessOptions,
-			(err, stdout, stderr) => {
-				if (this.disposables.length === 0) {
+			(error, stdout, stderr) => {
+				if (!this.panel) {
 					return;
 				}
 				let output: string;
-				if (err) {
+				if (error) {
 					output = this.formatMessage(
 						'Codebraid Preview',
 						[
 							'<h1 style="color:red;">Codebraid Preview Error</h1>',
 							`<h2><code>${executable}</code> failed:</h2>`,
 							'<pre style="white-space: pre-wrap;">',
-							this.convertStringToLiteralHtml(String(err)),
+							this.convertStringToLiteralHtml(String(error)),
 							'</pre>',
 							''
 						].join('\n')
 					);
+					this.scrollSyncOffset = 0;
 					this.sourceSupportsScrollSync = false;
 				} else {
 					output = stdout;
 				}
-				this.panel.webview.html = output.replace(
-					`<head>`,
-					`<head>\n  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}`
-				);
+				this.setWebviewHTML(output);
 				this.buildIsInProgress = false;
-				if (callback) {
-					callback();
-				}
 				if (this.needsBuild) {
 					setTimeout(() => {this.update();}, 0);
 				}
 			}
 		);
+		vscode.window.showErrorMessage(`${this.currentCodebraidOutput.size} - ${this.oldCodebraidOutput.size}`);
 		this.scrollSyncOffset = 0;
+		let includingCodebraidOutput: boolean;
+		if (this.usingCodebraid && (this.currentCodebraidOutput.size > 0 || this.oldCodebraidOutput.size > 0)) {
+			includingCodebraidOutput = true;
+		} else {
+			includingCodebraidOutput = false;
+		}
+		if (includingCodebraidOutput) {
+			buildProcess.stdin?.write([
+				`---`,
+				`codebraid_meta:`,
+				`  commonmark: ${fromFormatIsCommonmark}`,
+				`codebraid_output:\n`,
+			].join('\n'));
+			// Offset ignores `---` for now, since document could start with
+			// that sequence
+			this.scrollSyncOffset += 3;
+			let keySet = new Set();
+			if (this.currentCodebraidOutput.size > 0) {
+				for (const [key, yamlArray] of this.currentCodebraidOutput) {
+					buildProcess.stdin?.write(`  "${key}":\n`);
+					this.scrollSyncOffset += 1;
+					for (const yaml of yamlArray) {
+						buildProcess.stdin?.write(yaml);
+						this.scrollSyncOffset += countNewlines(yaml);
+					}
+					keySet.add(key);
+				}
+			}
+			if (this.oldCodebraidOutput.size > 0) {
+				for (const [key, yamlArray] of this.oldCodebraidOutput) {
+					if (keySet.has(key)) {
+						continue;
+					}
+					buildProcess.stdin?.write(`  "${key}":\n`);
+					this.scrollSyncOffset += 1;
+					for (const yaml of yamlArray) {
+						buildProcess.stdin?.write(yaml);
+						this.scrollSyncOffset += countNewlines(yaml);
+					}
+				}
+			}
+		}
 		if (!this.sourceSupportsScrollSync || fileTexts.length === 1) {
 			this.scrollSyncMap = undefined;
-			for (const fileText of fileTexts) {
-				buildProcess.stdin?.write(fileText);
+			for (const [fileIndex, fileText] of fileTexts.entries()) {
+				if (fileIndex === 0 && includingCodebraidOutput) {
+					if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
+					} else {
+						buildProcess.stdin?.write('---\n\n');
+						// Offset start+end delim lines, and trailing blank
+						this.scrollSyncOffset += 3;
+						buildProcess.stdin?.write(fileText);
+					}
+				} else {
+					buildProcess.stdin?.write(fileText);
+				}
 				if (fileText.slice(0, -2) !== '\n\n') {
 					buildProcess.stdin?.write('\n\n');
 				}
@@ -794,18 +808,23 @@ ${message}
 			let fileTextLines: number = 0;
 			this.scrollSyncMap = new Map();
 			this.scrollSyncMapMaxLine = 0;
-			for (let index = 0; index < this.fileNames.length; index++) {
-				const fileName = this.fileNames[index];
-				const fileText = fileTexts[index];
-				startLine = endLine + 1;
-				fileTextLines = 0;
-				for (const c of fileText) {
-					if (c === '\n') {
-						fileTextLines += 1;
+			for (const [fileIndex, fileText] of fileTexts.entries()) {
+				const fileName = fileNames[fileIndex];
+				if (fileIndex === 0 && includingCodebraidOutput) {
+					if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
+					} else {
+						buildProcess.stdin?.write('---\n\n');
+						// Offset start+end delim lines, and trailing blank
+						this.scrollSyncOffset += 3;
+						buildProcess.stdin?.write(fileText);
 					}
+				} else {
+					buildProcess.stdin?.write(fileText);
 				}
+				startLine = endLine + 1;
+				fileTextLines = countNewlines(fileText);
 				endLine = startLine + fileTextLines - 1;
-				buildProcess.stdin?.write(fileText);
 				if (fileText.slice(0, -2) !== '\n\n') {
 					fileTextLines += 2;
 					endLine += 2;
@@ -825,306 +844,243 @@ ${message}
 	}
 
 
-	async runCodebraid() {
-		if (this.codebraidProcess) {
+	processCodebraidOutput(dataString: string) {
+		let dataStringTrimmed = dataString.trim();
+		if (dataStringTrimmed === '') {
 			return;
 		}
+		let data: any;
+		try {
+			data = JSON.parse(dataStringTrimmed);
+		} catch {
+			// May need to add logging/debugging/alert
+			return;
+		}
+		let key = `${data.code_collection.type}.${data.code_collection.lang}.${data.code_collection.name}`;
+		// index is 1-based
+		let [index, length] = data.number.split('/').map((numString: string) => Number(numString));
+		if (index === undefined || length === undefined) {
+			return;
+		}
+		let yamlLines = [
+			`  - inline: ${data.inline}\n`,
+			`    attr_hash: "\`${data.attr_hash}\`"\n`,
+			`    code_hash: "\`${data.code_hash}\`"\n`,
+		];
+		if (data.output.length > 0) {
+			yamlLines.push(`    output:\n`);
+			for (const md of data.output) {
+				yamlLines.push(
+					`    - |\n`,
+					`      `, md.replaceAll('\n', '\n      '), `\n`,
+				);
+			}
+		}
+		let yaml = yamlLines.join('');
+		let yamlArray = this.currentCodebraidOutput.get(key);
+		let oldYamlArray = this.oldCodebraidOutput.get(key);
+		if (yamlArray === undefined) {
+			if (oldYamlArray === undefined) {
+				yamlArray = Array(length).fill(`  - placeholder: true\n`);
+			} else {
+				yamlArray = [];
+				for (const [oldIndex, oldYaml] of yamlArray.entries()) {
+					if (oldIndex === length) {
+						break;
+					}
+					yamlArray.push(oldYaml + `    old: true\n`);
+				}
+				while (yamlArray.length < length) {
+					yamlArray.push(`  - placeholder: true\n`);
+				}
+			}
+			this.currentCodebraidOutput.set(key, yamlArray);
+		}
+		// index is 1-based
+		yamlArray[index-1] = yaml;
+		this.update();
+	}
+
+	async runCodebraidExecute() {
+		return this.runCodebraid(false);
+	}
+
+	async runCodebraidNoExecute() {
+		return this.runCodebraid(true);
+	}
+
+	private async runCodebraid(noExecute: boolean) {
+		if (!this.panel) {
+			return;
+		}
+		if (!this.extension.hasCompatibleCodebraid) {
+			vscode.window.showErrorMessage([
+				`Codebraid is not installed or is out of date (need ${this.extension.minCodebraidVersion}+).`,
+				`Install or upgrade (https://pypi.org/project/codebraid/), then reload the extension.`,
+				`Code execution and loading output from cache is disabled.`,
+			].join(' '));
+			return;
+		}
+		if (this.codebraidIsInProgress) {
+			return;
+		}
+
+		// Typically, this will already be detected and set automatically
+		// during file reading by searching for `.cb{.-}`
 		this.usingCodebraid = true;
 
-		let currentPandocpreviewDefaultsFile = this.extension.config.pandoc.previewDefaultsFile;
-		let currentPandocpreviewDefaultsString: string | undefined;
-		let currentPandocpreviewDefaultsFileName: string | undefined;
-		try {
-			let pandocpreviewDefaultsDocument = await vscode.workspace.openTextDocument(
-				path.join(this.cwd, currentPandocpreviewDefaultsFile)
-			);
-			currentPandocpreviewDefaultsFileName = pandocpreviewDefaultsDocument.fileName;
-			currentPandocpreviewDefaultsString = pandocpreviewDefaultsDocument.getText();
-		} catch {
-		}
-		if (!currentPandocpreviewDefaultsFileName || !currentPandocpreviewDefaultsString) {
-			this.pandocpreviewDefaults = undefined;
-			this.pandocpreviewDefaultsFileName = undefined;
-			this.pandocpreviewDefaultsString = undefined;
-		} else if (currentPandocpreviewDefaultsString === this.pandocpreviewDefaultsString) {
-			this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-			if (this.pandocpreviewDefaults === null) {
-				// Invalid defaults.  Webview will already show error from
-				// previous build attempt.
-				return;
-			}
-		} else {
-			let currentPandocpreviewDefaults: {[key: string]: any};
-			try {
-				currentPandocpreviewDefaults = this.loadStringPandocpreviewDefaults(currentPandocpreviewDefaultsString);
-			} catch (e) {
-				this.pandocpreviewDefaults = null;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-				this.panel.webview.html = this.formatMessage(
-					'Codebraid Preview',
-					[
-						'<h1 style="color:red;">Codebraid Preview Error</h1>',
-						'<h2>Invalid Pandoc defaults file</h2>',
-						'<p>For file <code>',
-						this.convertStringToLiteralHtml(currentPandocpreviewDefaultsFileName),
-						'</code>:</p>',
-						'<pre style="white-space: pre-wrap;">',
-						this.convertStringToLiteralHtml(String(e)),
-						'</pre>',
-						''
-					].join('\n')
-				);
-				this.sourceSupportsScrollSync = false;
-				return;
-			}
-			let inputFiles: Array<string> | undefined = undefined;
-			if (currentPandocpreviewDefaults.hasOwnProperty('input-files')) {
-				inputFiles = currentPandocpreviewDefaults['input-files'];
-			} else if (currentPandocpreviewDefaults.hasOwnProperty('input-file')) {
-				inputFiles = [currentPandocpreviewDefaults['input-file']];
-			}
-			let defaultsApply: boolean = false;
-			let currentFileNames: Array<string> = [];
-			if (inputFiles) {
-				for (let inputFile of inputFiles) {
-					let inputFileName = vscode.Uri.file(path.join(this.cwd, inputFile)).fsPath;
-					currentFileNames.push(inputFileName);
-					if (this.fileNames.indexOf(inputFileName) !== -1) {
-						defaultsApply = true;
-					}
-				}
-			}
-			if (defaultsApply) {
-				this.fileNames = currentFileNames;
-				this.pandocpreviewDefaults = currentPandocpreviewDefaults;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-			} else {
-				this.pandocpreviewDefaults = undefined;
-				this.pandocpreviewDefaultsFileName = undefined;
-				this.pandocpreviewDefaultsString = undefined;
-			}
+		if (!this.pandocPreviewDefaults.isValid) {
+			this.pandocPreviewDefaults.showErrorMessage();
+			return;
 		}
 
-		let fromFormat: string;
-		if (!this.pandocpreviewDefaults || !this.pandocpreviewDefaults.hasOwnProperty('from')) {
-			fromFormat = this.extension.config.pandoc.fromFormat;
-		} else {
-			fromFormat = this.pandocpreviewDefaults['from'];
-		}
-		if (/^commonmark_x(?:$|[+-])/.test(fromFormat)) {
+		this.codebraidIsInProgress = true;
+
+		// Collect all data that depends on config and preview defaults so
+		// that everything from here onward isn't affected by config or
+		// preview changes during await's.
+		let fileNames = this.fileNames;
+		let fromFormat = this.fromFormat;
+		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
+
+		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
+		if (fromFormatIsCommonmark) {
 			fromFormat += '+sourcepos';
-			this.sourceSupportsScrollSync = true;
-		} else {
-			this.sourceSupportsScrollSync = false;
 		}
 
-		let fileTexts: Array<string> = [];
-		for (let fileName of this.fileNames) {
-			let fileDocument: vscode.TextDocument;
-			let fileText: string;
-			try {
-				fileDocument = await vscode.workspace.openTextDocument(fileName);
-				fileText = fileDocument.getText();
-			} catch {
-				this.panel.webview.html = this.formatMessage(
-					'Codebraid Preview',
-					[
-						'<h1 style="color:red;">Codebraid Preview Error</h1>',
-						`<h2>Missing input file: <code>${fileName}</code></h2>`,
-						''
-					].join('\n')
-				);
-				this.sourceSupportsScrollSync = false;
-				return;
-			}
-			fileTexts.push(fileText);
+		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, fromFormatIsCommonmark);
+		if (!maybeFileTexts) {
+			this.codebraidIsInProgress = false;
+			return;
 		}
-		let executable: string;
-		let args: Array<string> = [];
-		executable = 'codebraid';
+		const fileTexts: Array<string> = maybeFileTexts;
+
+		const executable: string = 'codebraid';
+		const args: Array<string> = [];
 		args.push(...this.codebraidArgs);
-		args.push(...this.extension.normalizedConfigPandocOptions);
-		args.push(...this.pandocArgs);
+		if (noExecute) {
+			args.push('--no-execute');
+		}
+		args.push(...normalizedConfigPandocOptions);
+		// Filters from 'pandocPreviewDefaults.filters' are skipped, because
+		// they are only applied to the document after Codebraid processing.
+		// If Codebraid adds a --pre-filter or similar option, that would need
+		// to be handled here.
+		args.push(...this.pandocPreviewArgs);
 		args.push(`--from=${fromFormat}`);
-		this.extension.statusBarConfig.setCodebraidRunning();
-		this.codebraidProcess = child_process.execFile(
-			executable,
-			args,
-			this.buildProcessOptions,
-			(err, stdout, stderr) => {
-				this.extension.statusBarConfig.setCodebraidWaiting();
-				if (this.disposables.length === 0) {
-					return;
-				}
-				let output: string;
-				if (err && (typeof(err.code) !== 'number' || err.code < 4)) {
-					output = this.formatMessage(
-						'Codebraid Preview',
-						[
-							'<h1 style="color:red;">Codebraid Preview Error</h1>',
-							`<h2><code>${executable}</code> failed:</h2>`,
-							'<pre style="white-space: pre-wrap;">',
-							this.convertStringToLiteralHtml(String(err)),
-							'</pre>',
-							''
-						].join('\n')
-					);
-					this.sourceSupportsScrollSync = false;
+
+		this.oldCodebraidOutput = this.currentCodebraidOutput;
+		this.currentCodebraidOutput = new Map();
+
+		if (noExecute) {
+			this.extension.statusBarConfig.setCodebraidRunningNoExecute();
+		} else {
+			this.extension.statusBarConfig.setCodebraidRunningExecute();
+		}
+
+		const stderrBuffer: Array<string> = [];
+		const stdoutBuffer: Array<string> = [];
+		const codebraidProcessExitPromise = new Promise<number>((resolve, reject) => {
+			const codebraidProcess = child_process.spawn(
+				executable,
+				args,
+				this.codebraidProcessOptions
+			);
+			codebraidProcess.stdin?.setDefaultEncoding('utf8');
+			codebraidProcess.stdout?.setEncoding('utf8');
+			codebraidProcess.stderr?.setEncoding('utf8');
+
+			codebraidProcess.on('close', (exitCode: number) => {
+				resolve(exitCode);
+			});
+			codebraidProcess.on('error', (error: any) => {
+				reject(error);
+			});
+			codebraidProcess.stderr?.on('data', (data: string) => {
+				stderrBuffer.push(data);
+			});
+			codebraidProcess.stdout?.on('data', (data: string) => {
+				const index = data.lastIndexOf('\n');
+				if (index === -1) {
+					stdoutBuffer.push(data);
 				} else {
-					output = stdout;
+					stdoutBuffer.push(data.slice(0, index));
+					for (const jsonData of stdoutBuffer.join('').split('\n')) {
+						this.processCodebraidOutput(jsonData);
+					}
+					stdoutBuffer.length = 0;
+					stdoutBuffer.push(data.slice(index+1));
 				}
-				this.panel.webview.html = output.replace(
-					`<head>`,
-					`<head>\n  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}`
-				);
-				this.codebraidProcess = undefined;
-			}
-		);
-		let buildProcess = this.codebraidProcess;
-		this.scrollSyncOffset = 0;
-		if (!this.sourceSupportsScrollSync || fileTexts.length === 1) {
-			this.scrollSyncMap = undefined;
+			});
 			for (const fileText of fileTexts) {
-				buildProcess.stdin?.write(fileText);
+				codebraidProcess.stdin?.write(fileText);
 				if (fileText.slice(0, -2) !== '\n\n') {
-					buildProcess.stdin?.write('\n\n');
+					codebraidProcess.stdin?.write('\n\n');
 				}
+			}
+			codebraidProcess.stdin?.end();
+		}).catch((error) => {
+			if (!this.panel) {
+				return undefined;
+			}
+			vscode.window.showErrorMessage(`${error}`);
+			return undefined;});
+
+		let codebraidProcessExitCode: number | undefined = await codebraidProcessExitPromise;
+		if (codebraidProcessExitCode === 0 || (codebraidProcessExitCode && codebraidProcessExitCode >= 4)) {
+			for (const jsonData of stdoutBuffer.join('').split('\n')) {
+				this.processCodebraidOutput(jsonData);
 			}
 		} else {
-			// Line numbers in webview are one-indexed
-			let startLine: number = 0;
-			let endLine: number = 0;
-			let fileTextLines: number = 0;
-			this.scrollSyncMap = new Map();
-			this.scrollSyncMapMaxLine = 0;
-			for (let index = 0; index < this.fileNames.length; index++) {
-				const fileName = this.fileNames[index];
-				const fileText = fileTexts[index];
-				startLine = endLine + 1;
-				fileTextLines = 0;
-				for (const c of fileText) {
-					if (c === '\n') {
-						fileTextLines += 1;
-					}
-				}
-				endLine = startLine + fileTextLines - 1;
-				buildProcess.stdin?.write(fileText);
-				if (fileText.slice(0, -2) !== '\n\n') {
-					fileTextLines += 2;
-					endLine += 2;
-					buildProcess.stdin?.write('\n\n');
-				}
-				if (!this.scrollSyncMap.has(fileName)) {
-					// For files included multiple times, use the first
-					// occurrence.  Possible future feature:  Track the
-					// location in the preview and try to use that information
-					// to determine which occurrence to use.
-					this.scrollSyncMap.set(fileName, [startLine, endLine]);
-				}
-				this.scrollSyncMapMaxLine = endLine;
+			this.currentCodebraidOutput = this.oldCodebraidOutput;
+			if (codebraidProcessExitCode === undefined) {
+				vscode.window.showErrorMessage('Codebraid process failed to start or lost communication.');
+			} else if (stderrBuffer.length === 0) {
+				vscode.window.showErrorMessage(`Codebraid process failed with exit code ${codebraidProcessExitCode}.`);
+		 	} else {
+				vscode.window.showErrorMessage(
+					`Codebraid process failed with exit code ${codebraidProcessExitCode}: ${stderrBuffer.join('')}`
+				);
 			}
 		}
-		buildProcess.stdin?.end();
+		this.extension.statusBarConfig.setCodebraidWaiting();
+		this.codebraidIsInProgress = false;
 	}
 
 
 	async exportDocument(exportPath: string) {
-		let currentPandocpreviewDefaultsFile = this.extension.config.pandoc.previewDefaultsFile;
-		let currentPandocpreviewDefaultsString: string | undefined;
-		let currentPandocpreviewDefaultsFileName: string | undefined;
-		try {
-			let pandocpreviewDefaultsDocument = await vscode.workspace.openTextDocument(
-				path.join(this.cwd, currentPandocpreviewDefaultsFile)
-			);
-			currentPandocpreviewDefaultsFileName = pandocpreviewDefaultsDocument.fileName;
-			currentPandocpreviewDefaultsString = pandocpreviewDefaultsDocument.getText();
-		} catch {
+		// Collect all data that depends on config and preview defaults so
+		// that everything from here onward isn't affected by config or
+		// preview changes during await's.
+		let fileNames = this.fileNames;
+		let fromFormat = this.fromFormat;
+		let filters = this.pandocPreviewDefaults.filters;
+		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
+
+		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, undefined);
+		if (!maybeFileTexts) {
+			return;
 		}
-		if (!currentPandocpreviewDefaultsFileName || !currentPandocpreviewDefaultsString) {
-			this.pandocpreviewDefaults = undefined;
-			this.pandocpreviewDefaultsFileName = undefined;
-			this.pandocpreviewDefaultsString = undefined;
-		} else if (currentPandocpreviewDefaultsString === this.pandocpreviewDefaultsString) {
-			this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-			if (this.pandocpreviewDefaults === null) {
-				vscode.window.showErrorMessage('Invalid Pandoc defaults file');
-				return;
-			}
-		} else {
-			let currentPandocpreviewDefaults: {[key: string]: any};
-			try {
-				currentPandocpreviewDefaults = this.loadStringPandocpreviewDefaults(currentPandocpreviewDefaultsString);
-			} catch (e) {
-				this.pandocpreviewDefaults = null;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-				vscode.window.showErrorMessage('Invalid Pandoc defaults file');
-				return;
-			}
-			let inputFiles: Array<string> | undefined = undefined;
-			if (currentPandocpreviewDefaults.hasOwnProperty('input-files')) {
-				inputFiles = currentPandocpreviewDefaults['input-files'];
-			} else if (currentPandocpreviewDefaults.hasOwnProperty('input-file')) {
-				inputFiles = [currentPandocpreviewDefaults['input-file']];
-			}
-			let defaultsApply: boolean = false;
-			let currentFileNames: Array<string> = [];
-			if (inputFiles) {
-				for (let inputFile of inputFiles) {
-					let inputFileName = vscode.Uri.file(path.join(this.cwd, inputFile)).fsPath;
-					currentFileNames.push(inputFileName);
-					if (this.fileNames.indexOf(inputFileName) !== -1) {
-						defaultsApply = true;
-					}
+		const fileTexts: Array<string> = maybeFileTexts;
+
+		const executable: string = 'pandoc';
+		const args: Array<string> = [];
+		args.push(...normalizedConfigPandocOptions);
+		if (filters) {
+			for (const filter of filters) {
+				if (filter.endsWith('.lua')) {
+					args.push(...['--lua-filter', filter]);
+				} else {
+					args.push(...['--filter', filter]);
 				}
 			}
-			if (defaultsApply) {
-				this.fileNames = currentFileNames;
-				this.pandocpreviewDefaults = currentPandocpreviewDefaults;
-				this.pandocpreviewDefaultsFileName = currentPandocpreviewDefaultsFileName;
-				this.pandocpreviewDefaultsString = currentPandocpreviewDefaultsString;
-			} else {
-				this.pandocpreviewDefaults = undefined;
-				this.pandocpreviewDefaultsFileName = undefined;
-				this.pandocpreviewDefaultsString = undefined;
-			}
 		}
-
-		let fromFormat: string;
-		if (!this.pandocpreviewDefaults || !this.pandocpreviewDefaults.hasOwnProperty('from')) {
-			fromFormat = this.extension.config.pandoc.fromFormat;
-		} else {
-			fromFormat = this.pandocpreviewDefaults['from'];
-		}
-
-		let fileTexts: Array<string> = [];
-		for (let fileName of this.fileNames) {
-			let fileDocument: vscode.TextDocument;
-			let fileText: string;
-			try {
-				fileDocument = await vscode.workspace.openTextDocument(fileName);
-				fileText = fileDocument.getText();
-			} catch {
-				vscode.window.showErrorMessage('Failed to read all files');
-				return;
-			}
-			fileTexts.push(fileText);
-		}
-		let executable: string;
-		let args: Array<string> = [];
+		args.push(...this.pandocExportArgs);
 		if (this.usingCodebraid) {
-			executable = 'codebraid';
-			args.push('pandoc');
-			// Save dialog already requires confirmation of overwrite
-			args.push('--overwrite');
-		} else {
-			executable = 'pandoc';
+			args.push(...this.pandocWithCodebraidOutputArgs);
 		}
-		args.push(...this.extension.normalizedConfigPandocOptions);
 		args.push(`--from=${fromFormat}`);
-		args.push('--standalone');
+		// Save dialog requires confirmation of overwrite
 		args.push(...['--output', `"${exportPath}"`]);
 
 		this.extension.statusBarConfig.setDocumentExportRunning();
@@ -1132,18 +1088,66 @@ ${message}
 			executable,
 			args,
 			this.buildProcessOptions,
-			(err, stdout, stderr) => {
+			(error, stdout, stderr) => {
+				if (!this.panel) {
+					return;
+				}
 				this.extension.statusBarConfig.setDocumentExportWaiting();
-				if (err) {
-					vscode.window.showErrorMessage(`Pandoc export failed: ${err}`);
-				} else if (stderr && !this.usingCodebraid) {
-					// Add Codebraid stderr once exit code options are finalized
+				if (error) {
+					vscode.window.showErrorMessage(`Pandoc export failed: ${error}`);
+				} else if (stderr) {
 					vscode.window.showErrorMessage(`Pandoc export stderr: ${stderr}`);
 				}
 			}
 		);
-		for (const fileText of fileTexts) {
-			buildProcess.stdin?.write(fileText);
+
+		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
+		let includingCodebraidOutput: boolean;
+		if (this.usingCodebraid && (this.currentCodebraidOutput.size > 0 || this.oldCodebraidOutput.size > 0)) {
+			includingCodebraidOutput = true;
+		} else {
+			includingCodebraidOutput = false;
+		}
+		if (includingCodebraidOutput) {
+			buildProcess.stdin?.write([
+				`---`,
+				`codebraid_meta:`,
+				`  commonmark: ${fromFormatIsCommonmark}`,
+				`codebraid_output:\n`,
+			].join('\n'));
+			let keySet = new Set();
+			if (this.currentCodebraidOutput.size > 0) {
+				for (const [key, yamlArray] of this.currentCodebraidOutput) {
+					buildProcess.stdin?.write(`  "${key}":\n`);
+					for (const yaml of yamlArray) {
+						buildProcess.stdin?.write(yaml);
+					}
+					keySet.add(key);
+				}
+			}
+			if (this.oldCodebraidOutput.size > 0) {
+				for (const [key, yamlArray] of this.oldCodebraidOutput) {
+					if (keySet.has(key)) {
+						continue;
+					}
+					buildProcess.stdin?.write(`  "${key}":\n`);
+					for (const yaml of yamlArray) {
+						buildProcess.stdin?.write(yaml);
+					}
+				}
+			}
+		}
+		for (const [fileIndex, fileText] of fileTexts.entries()) {
+			if (fileIndex === 0 && includingCodebraidOutput) {
+				if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+					buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
+				} else {
+					buildProcess.stdin?.write('---\n\n');
+					buildProcess.stdin?.write(fileText);
+				}
+			} else {
+				buildProcess.stdin?.write(fileText);
+			}
 			if (fileText.slice(0, -2) !== '\n\n') {
 				buildProcess.stdin?.write('\n\n');
 			}

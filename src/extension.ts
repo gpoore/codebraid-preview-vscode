@@ -88,7 +88,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		statusBarConfig: {
 			scrollPreviewWithEditor: undefined,
 			scrollEditorWithPreview: undefined,
-			setCodebraidRunning: () => {runCodebraidStatusBarItem.text = '$(sync~spin) Codebraid';},
+			setCodebraidRunningExecute: () => {runCodebraidStatusBarItem.text = '$(sync~spin) Codebraid';},
+			setCodebraidRunningNoExecute: () => {runCodebraidStatusBarItem.text = '$(loading~spin) Codebraid';},
 			setCodebraidWaiting: () => {runCodebraidStatusBarItem.text = '$(run-all) Codebraid';},
 			setDocumentExportRunning: () => {exportDocumentStatusBarItem.text = '$(sync~spin) Pandoc';},
 			setDocumentExportWaiting: () => {exportDocumentStatusBarItem.text = '$(export) Pandoc';},
@@ -128,6 +129,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		() => {
 			extensionState.config = vscode.workspace.getConfiguration('codebraid.preview');
 			extensionState.normalizedConfigPandocOptions = normalizePandocOptions(extensionState.config);
+			for (const preview of previews) {
+				if (preview.panel) {
+					preview.pandocPreviewDefaults.update().then(() => {
+						preview.update();
+					});
+				}
+			}
 		},
 		null,
 		context.subscriptions
@@ -255,7 +263,7 @@ function startPreview() {
 	}
 	let existingPreview: PreviewPanel | undefined;
 	for (let p of previews) {
-		if (p.fileNames.indexOf(editor.document.fileName) !== -1) {
+		if (p.panel && p.fileNames.indexOf(editor.document.fileName) !== -1) {
 			existingPreview = p;
 			break;
 		}
@@ -291,7 +299,7 @@ function runCodebraid() {
 	}
 	let preview: PreviewPanel | undefined;
 	for (let p of previews) {
-		if (p.panel.visible) {
+		if (p.panel && p.panel.visible) {
 			if (preview) {
 				vscode.window.showErrorMessage(
 					'Cannot run Codebraid with two previews visible.  Close one and try again.'
@@ -300,7 +308,7 @@ function runCodebraid() {
 		}
 		preview = p;
 	}
-	preview?.runCodebraid();
+	preview?.runCodebraidExecute();
 }
 
 
@@ -310,7 +318,7 @@ function exportDocument() {
 	}
 	let preview: PreviewPanel | undefined;
 	for (let p of previews) {
-		if (p.panel.visible) {
+		if (p.panel && p.panel.visible) {
 			if (preview) {
 				vscode.window.showErrorMessage(
 					'Cannot export document with two previews visible.  Close one and try again.'
@@ -394,7 +402,7 @@ function updateStatusBarItems() {
 			const document = visibleEditor.document;
 			if (document.uri.scheme === 'file' && fileExtensionIsSupported(document.fileName)) {
 				for (const preview of previews) {
-					if (preview.fileNames.indexOf(document.fileName) !== -1) {
+					if (preview.panel && preview.fileNames.indexOf(document.fileName) !== -1) {
 						previewEditorsCount += 1;
 						break;
 					}
@@ -417,7 +425,7 @@ let isShowingWithPreviewStatusBarItems = false;
 function updateWithPreviewStatusBarItems() {
 	let showWithPreviewStatusBarItems = false;
 	for (const preview of previews) {
-		if (preview.panel.visible) {
+		if (preview.panel && preview.panel.visible) {
 			showWithPreviewStatusBarItems = true;
 			break;
 		}

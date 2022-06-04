@@ -70,6 +70,9 @@ export default class PandocPreviewDefaults {
 			try {
 				[this.yaml, this.inputFiles, this.from, this.filters] = this.loadYAML(currentPreviewDefaultsString);
 			} catch (e) {
+				if (!this.previewPanel.panel) {
+					return;
+				}
 				this.errorMessage = `Failed to process config "${currentPreviewDefaultsPath}":\n${e}`;
 				this.showErrorMessage();
 				return;
@@ -102,7 +105,7 @@ export default class PandocPreviewDefaults {
 	}
 
 	showErrorMessage() {
-		if (this.errorMessage) {
+		if (this.errorMessage && this.previewPanel.panel) {
 			vscode.window.showErrorMessage(this.errorMessage);
 		}
 	}
