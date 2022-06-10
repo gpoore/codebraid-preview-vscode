@@ -1,6 +1,13 @@
 # Change Log
 
 
+## v0.5.0 (dev)
+
+* Fixed a bug that prevented Codebraid output from being displayed for code
+  chunks with a named `session` or `source`.
+
+
+
 ## v0.4.0 (2022-06-04)
 
 * Added support for `--only-code-output` from Codebraid v0.7.0.  The preview

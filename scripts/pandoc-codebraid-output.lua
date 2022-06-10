@@ -122,9 +122,9 @@ function getCodebraidCodeCollectionType(cbClass)
     return 'session'
 end
 
-function getCodebraidCodeCollectionName(cbClass, attributes)
+function getCodebraidCodeCollectionName(cbCollectionType, attributes)
     for k, v in pairs(attributes) do
-        if k == cbClass then
+        if k == cbCollectionType then
             return v
         end
     end
@@ -173,7 +173,7 @@ function Code(elem)
         return
     end
     local cbCollectionType = getCodebraidCodeCollectionType(cbClass)
-    local cbCollectionName = getCodebraidCodeCollectionName(cbClass, elem.attributes)
+    local cbCollectionName = getCodebraidCodeCollectionName(cbCollectionType, elem.attributes)
     local key = cbCollectionType .. '.' .. cbLang .. '.' .. cbCollectionName
 
     local collectionData = codebraidOutput[key]
@@ -235,7 +235,7 @@ function CodeBlock(elem)
         return
     end
     local cbCollectionType = getCodebraidCodeCollectionType(cbClass)
-    local cbCollectionName = getCodebraidCodeCollectionName(cbClass, elem.attributes)
+    local cbCollectionName = getCodebraidCodeCollectionName(cbCollectionType, elem.attributes)
     local key = cbCollectionType .. '.' .. cbLang .. '.' .. cbCollectionName
 
     local collectionData = codebraidOutput[key]
