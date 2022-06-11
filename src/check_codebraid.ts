@@ -15,31 +15,48 @@ const minMinor = minVersion[1];
 const minPatch = minVersion[2];
 export const minCodebraidVersion: string = `v${minMajor}.${minMinor}.${minPatch}`;
 
+const compatibleCodebraidPaths: Set<string> = new Set();
 
-export function hasCompatibleCodebraid() : boolean | undefined {
-	let stdout: string;
-	try {
-		stdout = child_process.execFileSync('codebraid', ['--version'], {shell: true, encoding: 'utf8'});
-	} catch {
-		return undefined;
+
+
+
+export async function checkCodebraidVersion(codebraidCommand: Array<string>) : Promise<boolean | null | undefined> {
+	const codebraidPath = codebraidCommand.join(' ');
+	if (compatibleCodebraidPaths.has(codebraidPath)) {
+		return true;
 	}
-	let match = /(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)/.exec(stdout);
-	if (!match) {
-		return false;
-	} else {
-		let major = Number(match[1]);
-		let minor = Number(match[2]);
-		let patch = Number(match[3]);
-		if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) {
-			return false;
-		} else if (major > minMajor) {
-			return true;
-		} else if (major === minMajor && minor > minMinor) {
-			return true;
-		} else if (major === minMajor && minor === minMinor && patch >= minPatch) {
-			return true;
-		} else {
-			return false;
-		}
+	const executable = codebraidCommand[0];
+	const args = codebraidCommand.slice(1);
+	args.push('--version');
+	const status = await new Promise<boolean | null | undefined>((resolve) => {
+		child_process.execFile(executable, args, {shell: true, encoding: 'utf8'}, (error, stdout, stderr) => {
+			if (error) {
+				resolve(undefined);
+			} else {
+				let match = /(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)/.exec(stdout);
+				if (!match) {
+					resolve(null);
+				} else {
+					let major = Number(match[1]);
+					let minor = Number(match[2]);
+					let patch = Number(match[3]);
+					if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) {
+						resolve(null);
+					} else if (major > minMajor) {
+						resolve(true);
+					} else if (major === minMajor && minor > minMinor) {
+						resolve(true);
+					} else if (major === minMajor && minor === minMinor && patch >= minPatch) {
+						resolve(true);
+					} else {
+						resolve(false);
+					}
+				}
+			}
+		});
+	}).catch((reason: any) => {return undefined;});
+	if (status) {
+		compatibleCodebraidPaths.add(codebraidPath);
 	}
+	return status;
 }

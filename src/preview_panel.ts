@@ -9,11 +9,13 @@
 import * as vscode from 'vscode';
 
 import * as child_process from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 
 import type { ExtensionState } from './types';
 import PandocPreviewDefaults from './pandoc_preview_defaults';
 import {countNewlines} from './util';
+import {checkCodebraidVersion, minCodebraidVersion} from './check_codebraid';
 
 
 
@@ -59,6 +61,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	// names are stored in an `Array` rather than a `Set` to allow for a
 	// single file to be included multiple times.
 	fileNames: Array<string>;
+	uriCache: Map<string, vscode.Uri>;
 	fromFormat: string;
 	pandocPreviewDefaults: PandocPreviewDefaults;
 	// Track visible editor that is relevant.
@@ -89,6 +92,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	pandocPreviewArgs: Array<string>;
 	pandocWithCodebraidOutputArgs: Array<string>;
 	pandocExportArgs: Array<string>;
+	codebraidCommand: Array<string> | null | undefined;
 	codebraidArgs: Array<string>;
 	buildProcessOptions: child_process.ExecFileOptions;
 	codebraidProcessOptions: child_process.SpawnOptions;
@@ -110,6 +114,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.cwd = path.dirname(editor.document.uri.fsPath);
 		this.fileNames = [];
 		this.fileNames.push(editor.document.fileName);
+		this.uriCache = new Map();
 		this.fromFormat = extension.config.pandoc.fromFormat;
 		this.pandocPreviewDefaults = new PandocPreviewDefaults(this);
 		this.visibleEditor = editor;
@@ -608,6 +613,107 @@ ${message}
 	}
 
 
+	async getPythonExecCommand(): Promise<Array<string> | undefined> {
+		// Get Python command currently set in Python extension
+		const pythonExtension = vscode.extensions.getExtension("ms-python.python");
+		if (!pythonExtension) {
+			return undefined;
+		}
+		if (!pythonExtension.isActive) {
+			await pythonExtension.activate();
+			if (!this.panel) {
+				return undefined;
+			}
+		}
+		let currentUri: vscode.Uri | undefined = this.uriCache.get(this.currentFileName);
+		if (!currentUri) {
+			currentUri = vscode.Uri.file(this.currentFileName);
+			this.uriCache.set(this.currentFileName, currentUri);
+		}
+		// To get execCommand from microsoft/vscode-python extension:
+		// interface IExtensionApi
+		// https://github.com/microsoft/vscode-python/issues/12596
+		// https://github.com/microsoft/vscode-python/blob/3698950c97982f31bb9dbfc19c4cd8308acda284/src/client/api.ts
+		let pythonExecCommand: Array<string> | undefined = pythonExtension.exports.settings.getExecutionDetails(currentUri).execCommand;
+		if (!pythonExecCommand) {
+			// Setting scoped to the first workspace folder
+			pythonExecCommand = pythonExtension.exports.settings.getExecutionDetails(undefined).execCommand;
+		}
+		return pythonExecCommand;
+	}
+
+
+	async setCodebraidCommand() {
+		let codebraidCommand: Array<string> = [];
+		let isCodebraidCompatible: boolean | null | undefined;
+		let pythonPath: string | undefined;
+		const pythonExecCommand = await this.getPythonExecCommand();
+		if (pythonExecCommand) {
+			// May need to handle other elements of pythonExecCommand in future.
+			pythonPath = pythonExecCommand[0];
+		} else {
+			pythonPath = vscode.workspace.getConfiguration('python').defaultInterpreterPath;
+		}
+		if (pythonPath) {
+			const pythonPathElems: Array<string> = pythonPath.replaceAll('\\', '/').split('/');
+			pythonPathElems.pop();  // Remove python executable
+			let binaryDir: string | undefined;
+			if (pythonPathElems[-1] === 'bin' || pythonPathElems[-1] === 'Scripts') {
+				binaryDir = pythonPathElems[-1];
+				pythonPathElems.pop();
+			}
+			const pythonRootPath: string = pythonPathElems.join('/');
+			const pythonRootPathQuoted: string = `"${pythonPathElems.join('/')}"`;
+			try {
+				await fs.promises.access(`${pythonRootPath}/conda-meta`, fs.constants.X_OK).then(() => {
+					// Using full paths to avoid https://github.com/conda/conda/issues/11174
+					codebraidCommand.push(...['conda', 'run', '--prefix', pythonRootPathQuoted, '--no-capture-output']);
+				});
+			} catch {
+			}
+			codebraidCommand.push(`${pythonRootPathQuoted}/${binaryDir ? binaryDir : 'Scripts'}/codebraid`);
+			isCodebraidCompatible = await checkCodebraidVersion(codebraidCommand);
+		}
+		if (isCodebraidCompatible === undefined) {
+			codebraidCommand = ['codebraid'];
+			isCodebraidCompatible = await checkCodebraidVersion(codebraidCommand);
+			if (isCodebraidCompatible && pythonPath) {
+				if (this.codebraidCommand === undefined || (Array.isArray(this.codebraidCommand) &&
+						(this.codebraidCommand.length !== 1 || this.codebraidCommand[0] !== 'codebraid'))) {
+					vscode.window.showWarningMessage([
+						`The Python interpreter selected in VS Code does not have codebraid installed.`,
+						`Falling back to codebraid on PATH.`,
+					].join(' '));
+				}
+			}
+		}
+		if (isCodebraidCompatible === undefined) {
+			this.codebraidCommand = undefined;
+			vscode.window.showErrorMessage([
+				`Could not find codebraid executable.`,
+				`Code execution is disabled.`,
+				`Install from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+			].join(' '));
+		} else if (isCodebraidCompatible === null) {
+			this.codebraidCommand = null;
+			vscode.window.showErrorMessage([
+				`Codebraid executable failed to return version information.`,
+				`Code execution is disabled.`,
+				`Consider reinstalling from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+			].join(' '));
+		} else if (isCodebraidCompatible === false) {
+			this.codebraidCommand = null;
+			vscode.window.showErrorMessage([
+				`Codebraid executable is outdated and unsupported.`,
+				`Code execution is disabled.`,
+				`Upgrade from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+			].join(' '));
+		} else {
+			this.codebraidCommand = codebraidCommand;
+		}
+	}
+
+
 	isFromFormatCommonMark(format: string) : boolean {
 		return /^(?:commonmark_x|commonmark|gfm)(?:$|[+-])/.test(format);
 	}
@@ -914,15 +1020,11 @@ ${message}
 		if (!this.panel) {
 			return;
 		}
-		if (!this.extension.hasCompatibleCodebraid) {
-			vscode.window.showErrorMessage([
-				`Codebraid is not installed or is out of date (need ${this.extension.minCodebraidVersion}+).`,
-				`Install or upgrade (https://pypi.org/project/codebraid/), then reload the extension.`,
-				`Code execution and loading output from cache is disabled.`,
-			].join(' '));
+		if (this.codebraidIsInProgress) {
 			return;
 		}
-		if (this.codebraidIsInProgress) {
+		await this.setCodebraidCommand();
+		if (!this.codebraidCommand || !this.panel) {
 			return;
 		}
 
@@ -958,8 +1060,8 @@ ${message}
 		}
 		const fileTexts: Array<string> = maybeFileTexts;
 
-		const executable: string = 'codebraid';
-		const args: Array<string> = [];
+		const executable: string = this.codebraidCommand[0];
+		const args: Array<string> = this.codebraidCommand.slice(1);
 		args.push(...this.codebraidArgs);
 		if (noExecute) {
 			args.push('--no-execute');
@@ -983,7 +1085,7 @@ ${message}
 
 		const stderrBuffer: Array<string> = [];
 		const stdoutBuffer: Array<string> = [];
-		const codebraidProcessExitPromise = new Promise<number>((resolve, reject) => {
+		let codebraidProcessExitCode: number | undefined = await new Promise<number | undefined>((resolve, reject) => {
 			const codebraidProcess = child_process.spawn(
 				executable,
 				args,
@@ -1023,13 +1125,12 @@ ${message}
 			}
 			codebraidProcess.stdin?.end();
 		}).catch((error) => {
-			if (!this.panel) {
-				return undefined;
+			if (this.panel) {
+				vscode.window.showErrorMessage(`Codebraid failed: ${error}`);
 			}
-			vscode.window.showErrorMessage(`${error}`);
-			return undefined;});
+			return undefined;
+		});
 
-		let codebraidProcessExitCode: number | undefined = await codebraidProcessExitPromise;
 		if (codebraidProcessExitCode === 0 || (codebraidProcessExitCode && codebraidProcessExitCode >= 4)) {
 			for (const jsonData of stdoutBuffer.join('').split('\n')) {
 				this.processCodebraidOutput(jsonData);

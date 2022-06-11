@@ -13,8 +13,6 @@ import * as process from 'process';
 
 import PreviewPanel from './preview_panel';
 import type { ExtensionState } from './types';
-import {minCodebraidVersion, hasCompatibleCodebraid} from './check_codebraid';
-
 
 
 const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
@@ -74,8 +72,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	);
 	extensionState = {
 		isWindows: isWindows,
-		minCodebraidVersion: minCodebraidVersion,
-		hasCompatibleCodebraid: hasCompatibleCodebraid(),
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),

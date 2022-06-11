@@ -3,6 +3,17 @@
 
 ## v0.5.0 (dev)
 
+* Improved process for locating `codebraid` executable.  If a Python
+  interpreter is set in VS Code, then that Python installation is now checked
+  for a `codebraid` executable.  If no executable is found, then PATH is
+  checked for a `codebraid` executable.  A warning message is displayed when
+  the Python installation set in VS Code lacks an executable and the extension
+  falls back to an executable on PATH.  Previously, only PATH was checked
+  for an executable (#5).
+
+* If the `codebraid` executable is part of an Anaconda installation, it is now
+  launched via `conda run` so that the relevant environment will be activated.
+
 * Fixed a bug that prevented Codebraid output from being displayed for code
   chunks with a named `session` or `source`.
 

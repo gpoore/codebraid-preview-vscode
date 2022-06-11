@@ -88,8 +88,8 @@ Install [Pandoc](https://pandoc.org/).  Version 2.17.1.1 or later is strongly
 recommended.  Earlier versions may work but will have reduced functionality,
 including scroll sync issues with YAML metadata.
 
-For code execution, install [Codebraid](https://github.com/gpoore/codebraid/)
-version 0.6.0 or later.
+For code execution, install the latest version of
+[Codebraid](https://github.com/gpoore/codebraid/).
 
 
 ## Extension settings
@@ -123,6 +123,38 @@ version 0.6.0 or later.
   current document is not in `input-files`.  If the current document is in
   `input-files`, or if `input-files` is not defined, then the preview defaults
   file is used.
+
+
+## Codebraid configuration
+
+When Codebraid is used to run code, the `codebraid` executable is found by
+searching the following locations.
+
+1. If a Python interpreter is set in VS Code, the interpreter installation is
+   checked for a `codebraid` executable.
+
+   Notice that a Python interpreter can be set at the file level or workspace
+   level (`Ctrl+Shift+P`, then `Python: Select Interpreter`, or configure
+   `python.defaultInterpreterPath` in a workspace `settings.json`).  A Python
+   interpreter can also be configured in global User Settings (File,
+   Preferences, Settings, `Python: Default Interpreter Path`).  Only the first
+   Python interpreter that is set in the file/workspace/global sequence is
+   checked for a `codebraid` executable.
+
+   For more details about configuring Python in VS Code, see
+   https://code.visualstudio.com/docs/python/environments.
+
+2. If a Python interpreter is not set, or its installation does not include a
+   `codebraid` executable, then the first `codebraid` executable on PATH is
+   used.  There will be a warning message if a Python interpreter is set but
+   does not include `codebraid`, so that `codebraid` on PATH is used as a
+   fallback.
+
+If the `codebraid` executable is part of an
+[Anaconda](https://www.anaconda.com/products/distribution) installation, it is
+launched via `conda run` so that the relevant conda environment is activated.
+For other environments and installations, the `codebraid` executable is run
+directly.
 
 
 ## Security
