@@ -3,6 +3,8 @@
 
 ## v0.5.0 (dev)
 
+* Minimum supported Codebraid is now v0.8.0.
+
 * Improved process for locating `codebraid` executable.  If a Python
   interpreter is set in VS Code, then that Python installation is now checked
   for a `codebraid` executable.  If no executable is found, then PATH is
