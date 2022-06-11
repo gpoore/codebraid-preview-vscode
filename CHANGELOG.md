@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.5.0 (dev)
+## v0.5.0 (2022-06-11)
 
 * Minimum supported Codebraid is now v0.8.0.
 
