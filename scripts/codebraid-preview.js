@@ -9,14 +9,11 @@
 const vscode = acquireVsCodeApi();
 
 let editorMinLine = 0;
-let codebraidSourceposMinElement = document.getElementById('codebraid-sourcepos-min');
-if (codebraidSourceposMinElement) {
-    editorMinLine = Number(codebraidSourceposMinElement.getAttribute('data-codebraid-sourcepos-start'));
-}
 let editorMaxLine = 0;
-let codebraidSourceposMaxElement = document.getElementById('codebraid-sourcepos-max');
-if (codebraidSourceposMaxElement) {
-    editorMaxLine = Number(codebraidSourceposMaxElement.getAttribute('data-codebraid-sourcepos-start'));
+let codebraidSourceposMetaElement = document.getElementById('codebraid-sourcepos-meta');
+if (codebraidSourceposMetaElement) {
+    editorMinLine = Number(codebraidSourceposMetaElement.getAttribute('data-codebraid-sourcepos-min'));
+    editorMaxLine = Number(codebraidSourceposMetaElement.getAttribute('data-codebraid-sourcepos-max'));
 }
 
 

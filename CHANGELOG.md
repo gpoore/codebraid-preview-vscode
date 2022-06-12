@@ -1,6 +1,14 @@
 # Change Log
 
 
+## v0.5.1 (dev)
+
+* Fixed scroll sync bug that could cause the editor to jump to the beginning
+  of a document when the preview is scrolled to the very end of the
+  document.
+
+
+
 ## v0.5.0 (2022-06-11)
 
 * Minimum supported Codebraid is now v0.8.0.

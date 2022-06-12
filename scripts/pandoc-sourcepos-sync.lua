@@ -223,16 +223,10 @@ function Pandoc(doc)
     end
     doc.blocks:insert(
         pandoc.Div(pandoc.Null(), {
-            id='codebraid-sourcepos-min',
-            class='codebraid-sourcepos',
-            ['codebraid-sourcepos-start']=minLineNum
-        })
-    )
-    doc.blocks:insert(
-        pandoc.Div(pandoc.Null(), {
-            id='codebraid-sourcepos-max',
-            class='codebraid-sourcepos',
-            ['codebraid-sourcepos-start']=maxLineNum
+            id='codebraid-sourcepos-meta',
+            class='codebraid-sourcepos-meta',
+            ['codebraid-sourcepos-min']=minLineNum,
+            ['codebraid-sourcepos-max']=maxLineNum,
         })
     )
     return doc
