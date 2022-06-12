@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.5.1 (dev)
+## v0.5.1 (2022-06-11)
 
 * Fixed scroll sync bug that could cause the editor to jump to the beginning
   of a document when the preview is scrolled to the very end of the
