@@ -14,6 +14,7 @@ export type ExtensionState = {
 	'context': vscode.ExtensionContext,
 	'config': vscode.WorkspaceConfiguration,
 	'normalizedConfigPandocOptions': Array<string>,
+	'outputChannel': vscode.OutputChannel;
 	'statusBarItems': {
 		'openPreview': vscode.StatusBarItem
 		'runCodebraid': vscode.StatusBarItem,

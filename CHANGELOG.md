@@ -1,6 +1,21 @@
 # Change Log
 
 
+## v0.6.0 (dev)
+
+* Improved display of Codebraid output in the preview.  Code chunks that have
+  not yet been processed/executed by Codebraid and thus do not have output are
+  indicated by placeholder boxes.  Output from modified code chunks or from
+  stale cache is more clearly indicated.
+
+* Improved responsiveness of progress animations for "Codebraid" button and
+  preview.  There is no longer a significant, noticeable time delay between
+  clicking the button and the start of button and preview progress animations.
+
+* Added logging in VS Code's Output tab, under "Codebraid Preview".
+
+
+
 ## v0.5.1 (2022-06-11)
 
 * Fixed scroll sync bug that could cause the editor to jump to the beginning

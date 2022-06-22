@@ -50,6 +50,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	);
 
 	let config = vscode.workspace.getConfiguration('codebraid.preview');
+	const outputChannel = vscode.window.createOutputChannel('Codebraid Preview');
+	context.subscriptions.push(outputChannel);
 	let openPreviewStatusBarItem = vscode.window.createStatusBarItem(
 		'codebraidPreview.startPreview',
 		vscode.StatusBarAlignment.Right,
@@ -75,6 +77,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),
+		outputChannel: outputChannel,
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
 			runCodebraid: runCodebraidStatusBarItem,

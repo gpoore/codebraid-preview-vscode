@@ -31,6 +31,13 @@ let isScrollingPreviewWithEditorTimer = setTimeout(
 window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.command) {
+        case 'codebraidPreview.startingCodebraid': {
+            const outputElems = document.querySelectorAll('.codebraid-output');
+            for (const elem of outputElems) {
+                elem.classList.add('codebraid-output-prepping');
+            }
+            return;
+        }
         case 'codebraidPreview.scrollPreview': {
             if (editorMaxLine === 0) {
                 return;

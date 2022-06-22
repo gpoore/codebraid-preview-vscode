@@ -7,10 +7,9 @@ http://opensource.org/licenses/BSD-3-Clause
  *--------------------------------------------------------------------------*/
 
 
-/* Guarantee that images with transparent background are legible */
-.vscode-dark img.richOutput {
-    background-color: gainsboro;
-}
+
+
+/* Pandoc patch ------------------------------------------------------------*/
 
 /* Make Pandoc line numbers visible */
 pre.numberSource {
@@ -30,6 +29,16 @@ pre.numberSource code > span {
 }
 .vscode-high-contrast div.sourceCode {
 	background-color: rgb(0, 0, 0);
+}
+
+
+
+
+/* Style output ------------------------------------------------------------*/
+
+/* Guarantee that images with transparent background are legible */
+.vscode-dark img.richOutput {
+    background-color: gainsboro;
 }
 
 /* Style stderr */
@@ -60,38 +69,138 @@ pre.numberSource code > span {
     color: tomato;
 }
 
-/* Code update */
-.codebraid-output-missing:before,
-.codebraid-output-waiting:before,
-.codebraid-output-stale:before,
-.codebraid-output-old:before {
-    font-family: "codicon";
-    font-size: calc(var(--markdown-font-size, 14px)*1.5);
-    content: "\ea77";
-    font-weight: 500;
+
+
+
+/* Indicate output status --------------------------------------------------*/
+
+.codebraid-output-missing::before,
+.codebraid-output-placeholder::before,
+.codebraid-output-modified::before,
+.codebraid-output-old::before,
+.codebraid-output-stale::before,
+.codebraid-output-prepping::before,
+.codebraid-output-processing::before {
     color: cornflowerblue;
-    float: right;
-    position: relative;
-    margin-right: -1.5em;
-}
-
-.codebraid-running.codebraid-output-missing:before,
-.codebraid-running.codebraid-output-waiting:before,
-.codebraid-running.codebraid-output-stale:before,
-.codebraid-running.codebraid-output-old:before {
     font-family: "codicon";
     font-size: calc(var(--markdown-font-size, 14px)*1.5);
     content: "\ea77";
-    font-weight: 400;
-    animation: codebraid-running 1s infinite;
     float: right;
-    position: relative;
     margin-right: -1.5em;
 }
-
-
-@keyframes codebraid-running {
+@keyframes codebraid-prepping {
+    0% { color: skyblue;}
+    50% { color: cornflowerblue;}
+    100% { color: steelblue;}
+}
+.codebraid-output-prepping::before {
+    animation: codebraid-prepping 1s infinite;
+}
+@keyframes codebraid-processing {
     0% { color: skyblue; transform: rotate(0deg);}
     50% { color: cornflowerblue; transform: rotate(90deg);}
     100% { color: steelblue; transform: rotate(180deg);}
-  }
+}
+.codebraid-output-processing::before {
+    animation: codebraid-processing 1s infinite;
+}
+
+div:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+), span:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+) > span {
+    border-color: cornflowerblue;
+}
+
+div:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale,
+) {
+    width: 100%;
+    border-width: 0 4px 0 0;
+    padding-right: 0.5ex;
+}
+div:is(.codebraid-output-old, .codebraid-output-stale) {
+    border-style: none dotted none none;
+}
+div:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-invalid-display
+) {
+    border-style: none solid none none;
+}
+div:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-invalid-display
+), div.codebraid-output-none:is(
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+) {
+    height: 2em;
+}
+
+span:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+) > span {
+    display: inline-block;
+    margin: 1px;
+    border-width: 2px;
+    padding-inline: 0.5ex;
+}
+span:is(.codebraid-output-old, .codebraid-output-stale) > span {
+    border-style: dotted;
+}
+span:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-modified,
+    .codebraid-output-invalid-display
+) > span {
+    border-style: solid;
+}
+span:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-invalid-display
+) > span, span.codebraid-output-none:is(
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+) > span {
+    display: inline-block;
+    width: 2em;
+    height: 1em;
+    vertical-align: text-bottom;
+}
+
+div:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-invalid-display
+), span:is(
+    .codebraid-output-missing, .codebraid-output-placeholder,
+    .codebraid-output-invalid-display
+) > span {
+    background: rgb(100, 149, 237, 0.3);
+}
+div.codebraid-output-none:is(
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+), span.codebraid-output-none:is(
+    .codebraid-output-modified,
+    .codebraid-output-old, .codebraid-output-stale
+) > span {
+    background: linear-gradient(
+        -45deg,
+        transparent 0% 40%,
+        rgb(100, 149, 237, 0.6) 40% 60%,
+        transparent 60% 100%
+    );
+    background-size: 4px 4px;
+    background-repeat: repeat;
+}

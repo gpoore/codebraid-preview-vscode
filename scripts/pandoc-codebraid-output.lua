@@ -11,18 +11,63 @@
 --
 
 
-local codebraidConfig = {}
+local fromFormatIsCommonmark = false
+local codebraidIsRunning = false
+-- Chunk output obtained from metadata.  {code_collection_key: [{chunk_attr: value}]}
 local codebraidOutput = {}
+-- Current location in output for each code collection.  {code_collection_key: int}
 local codebraidKeyCurrentIndex = {}
+-- Whether each code collection has stale output.  {code_collection_key: bool}
 local codebraidKeyIsStale = {}
+-- Whether code collection is currently being processed/executed.  nil | {code_collection_key: bool}
+local codebraidKeyIsProcessing
+-- Map placehold langs to actual langs for cases where lang is inherited.  {key: value}
+local codebraidPlaceholderLangs = {}
+-- Counter for assigning placeholder langs for cases where lang is inherited.
+local placeholderLangNum = 0
 
+
+--[[
+Classes attached to output based on its status.
+  * `missing`:  No output data exists.  This applies to a new code chunk that
+    has never been processed by Codebraid.
+  * `placeholder`:  This is only possible while Codebraid is running (or if
+    Codebraid fails to complete).  Output data has not been received but is
+    expected.  There is no old cached output, so a placeholder is displayed.
+    This applies to a code chunk in a session/source currently being processed
+    by Codebraid, when the chunk itself has not yet been processed.
+  * `old`:  This is only possible while Codebraid is running (or if Codebraid
+    fails to complete).  It is the same as `placeholder`, except old cached
+    output data exists so it can be displayed instead of a placeholder.
+  * `modified`:  Output data exists but it may be outdated because the code
+    chunk attributes or code has been modified.  When both `old` and
+    `modified` apply to a chunk, `modified` is used.
+  * `stale`:  Output data exists and can be displayed, but a prior code chunk
+    has been modified so the output may be outdated.  When both `old` and
+    `stale` apply to a chunk, `stale` is used.
+
+The `invalid-display` class applies in cases where output exists but there is
+an inline-block mismatch that makes the output impossible to display.  The
+`output-none` class applies when there is outdated data and it contains no
+output.
+--]]
+local classCategories = {'missing', 'placeholder', 'old', 'modified', 'stale'}
 local classes = {
-    ['classMissing'] = 'codebraid-output-missing',
-    ['classOld'] = 'codebraid-output-old',
-    ['classStale'] = 'codebraid-output-stale',
-    ['classWaiting'] = 'codebraid-output-waiting',
+    ['output'] = 'codebraid-output',
+    ['outputNoOutput'] = 'codebraid-output codebraid-output-none',
 }
+for _, k in pairs(classCategories) do
+    classes[k] = 'codebraid-output codebraid-output-' .. k
+    if k ~= 'missing' and k ~= 'placeholder' then
+        classes[k .. 'InvalidDisplay'] = classes[k] .. ' codebraid-output-invalid-display'
+        classes[k .. 'NoOutput'] = classes[k] .. ' codebraid-output-none'
+    end
+end
+local preppingClass = ' codebraid-output-prepping'
+local processingClass = ' codebraid-output-processing'
 
+
+-- Dict of Codebraid classes that cause code execution.  {key: bool}
 local codebraidExecuteClasses = {
     ['cb-expr'] = true,
     ['cb-nb'] = true,
@@ -35,19 +80,22 @@ for k, v in pairs(codebraidExecuteClasses) do
 end
 
 
+
+
 function Meta(metaTable)
     local metaConfig = metaTable['codebraid_meta']
     local metaOutput = metaTable['codebraid_output']
     if metaConfig == nil or metaOutput == nil then
         return
     end
-    codebraidConfig['commonmark'] = metaConfig['commonmark']
-    codebraidConfig['codebraid_running'] = metaConfig['codebraid_running']
-    if codebraidConfig['codebraid_running'] then
-        for className, classVal in pairs(classes) do
-            classes[className] = classVal .. ' codebraid-running'
+    fromFormatIsCommonmark = metaConfig['commonmark']
+    codebraidIsRunning = metaConfig['running']
+    if metaConfig['placeholder_langs'] ~= nil then
+        for key, elem in pairs(metaConfig['placeholder_langs']) do
+            codebraidPlaceholderLangs[key] = elem[1].text
         end
     end
+    codebraidKeyIsProcessing = metaConfig['collection_processing']
     for key, rawOutputList in pairs(metaOutput) do
         local processedOutputList = {}
         codebraidOutput[key] = processedOutputList
@@ -102,12 +150,21 @@ function Meta(metaTable)
 end
 
 
+
+
 function getCodebraidLangAndCommandClass(classes)
     for index, class in pairs(classes) do
-        if class:sub(1, 3) == 'cb-' or (not codebraidConfig['commonmark'] and class:sub(1, 3) == 'cb.') then
+        if class:sub(1, 3) == 'cb-' or (not fromFormatIsCommonmark and class:sub(1, 3) == 'cb.') then
             local lang = ''
             if index > 1 then
                 lang = classes[1]
+            end
+            if lang:match('^%d+$') then
+                actualLang = codebraidPlaceholderLangs[tostring(placeholderLangNum)]
+                if actualLang ~= nil then
+                    lang = actualLang
+                    placeholderLangNum = placeholderLangNum + 1
+                end
             end
             return lang, class
         end
@@ -167,128 +224,116 @@ function getCodebraidAttrHash(id, classes, attributes)
 end
 
 
-function Code(elem)
+function codeChunk(elem, isInline)
     local cbLang, cbClass = getCodebraidLangAndCommandClass(elem.classes)
-    if cbLang == nil or cbClass == nil then
+    if cbClass == nil then
         return
     end
     local cbCollectionType = getCodebraidCodeCollectionType(cbClass)
     local cbCollectionName = getCodebraidCodeCollectionName(cbCollectionType, elem.attributes)
     local key = cbCollectionType .. '.' .. cbLang .. '.' .. cbCollectionName
 
+    local chunkStageClass = ''
+    if codebraidIsRunning and codebraidKeyIsProcessing == nil then
+        chunkStageClass = preppingClass
+    end
+
     local collectionData = codebraidOutput[key]
     if collectionData == nil then
-        return pandoc.Span({}, {class=classes['classMissing']})
+        if isInline then
+            return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['missing'] .. chunkStageClass})
+        else
+            return pandoc.Div(pandoc.Null(), {class=classes['missing'] .. chunkStageClass})
+        end
     end
     local nodeIndex = codebraidKeyCurrentIndex[key]
     if nodeIndex == nil then
         nodeIndex = 1
     end
     codebraidKeyCurrentIndex[key] = nodeIndex + 1
-    nodeData = collectionData[nodeIndex]
+    local nodeData = collectionData[nodeIndex]
     if nodeData == nil then
-        return pandoc.Span(pandoc.Inlines{}, {class=classes['classMissing']})
+        if isInline then
+            return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['missing'] .. chunkStageClass})
+        else
+            return pandoc.Div(pandoc.Null(), {class=classes['missing'] .. chunkStageClass})
+        end
+    end
+    if codebraidIsRunning and codebraidKeyIsProcessing ~= nil and codebraidKeyIsProcessing[key] then
+        if nodeData['placeholder'] or nodeData['old'] then
+            chunkStageClass = processingClass
+        end
     end
     if nodeData['placeholder'] then
-        return pandoc.Span(pandoc.Inlines{}, {class=classes['classWaiting']})
+        if isInline then
+            return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['placeholder'] .. chunkStageClass})
+        else
+            return pandoc.Div(pandoc.Null(), {class=classes['placeholder'] .. chunkStageClass})
+        end
     end
+    local isModified = false
     local isStale = codebraidKeyIsStale[key]
     if isStale == nil then
         isStale = false
     end
-    if not isStale then
-        local attrHash = getCodebraidAttrHash(elem.id, elem.classes, elem.attributes)
-        local codeHash = pandoc.sha1(elem.text)
-        if attrHash ~= nodeData['attr_hash'] or codeHash ~= nodeData['code_hash'] or not nodeData['inline'] then
-            isStale = true
-        end
+    local attrHash = getCodebraidAttrHash(elem.id, elem.classes, elem.attributes)
+    local codeHash = pandoc.sha1(elem.text)
+    if attrHash ~= nodeData['attr_hash'] or codeHash ~= nodeData['code_hash'] or isInline ~= nodeData['inline'] then
+        isModified = true
+        isStale = true
     end
     codebraidKeyIsStale[key] = isStale
 
-    if nodeData['output'] ~= nil then
-        if not nodeData['inline'] then
-            return pandoc.Span(pandoc.Inlines{}, {class=classes['classWaiting']})
-        elseif isStale then
-            return pandoc.Span(nodeData['output'], {class=classes['classStale']})
-        elseif nodeData['old'] then
-            return pandoc.Span(nodeData['output'], {class=classes['classOld']})
+    local output
+    if nodeData['output'] ~= nil and isInline == nodeData['inline'] then
+        if isInline then
+            output = pandoc.Span(nodeData['output'])
         else
-            return nodeData['output']
+            output = nodeData['output']
         end
     else
-        if not nodeData['inline'] then
-            return pandoc.Span(pandoc.Inlines{}, {class=classes['classWaiting']})
-        elseif isStale then
-            return pandoc.Span(pandoc.Inlines{}, {class=classes['classStale']})
-        elseif nodeData['old'] then
-            return pandoc.Span(pandoc.Inlines{}, {class=classes['classOld']})
+        if isInline then
+            output = pandoc.Span(pandoc.Inlines{})
         else
-            return pandoc.Inlines{}
+            output = pandoc.Null()
         end
+    end
+    local baseClass
+    if isModified then
+        baseClass = 'modified'
+    elseif isStale then
+        baseClass = 'stale'
+    elseif nodeData['old'] then
+        baseClass = 'old'
+    else
+        baseClass = 'output'
+    end
+    local displayClass
+    if nodeData['output'] ~= nil then
+        if isInline == nodeData['inline'] then
+            displayClass = ''
+        else
+            displayClass = 'InvalidDisplay'
+        end
+    else
+        displayClass = 'NoOutput'
+    end
+    if isInline then
+        return pandoc.Span(output, {class=classes[baseClass .. displayClass] .. chunkStageClass})
+    else
+        return pandoc.Div(output, {class=classes[baseClass .. displayClass] .. chunkStageClass})
     end
 end
 
+function Code(elem)
+    return codeChunk(elem, true)
+end
 
 function CodeBlock(elem)
-    local cbLang, cbClass = getCodebraidLangAndCommandClass(elem.classes)
-    if cbLang == nil or cbClass == nil then
-        return
-    end
-    local cbCollectionType = getCodebraidCodeCollectionType(cbClass)
-    local cbCollectionName = getCodebraidCodeCollectionName(cbCollectionType, elem.attributes)
-    local key = cbCollectionType .. '.' .. cbLang .. '.' .. cbCollectionName
-
-    local collectionData = codebraidOutput[key]
-    if collectionData == nil then
-        return pandoc.Div(pandoc.Null(), {class=classes['classMissing']})
-    end
-    local nodeIndex = codebraidKeyCurrentIndex[key]
-    if nodeIndex == nil then
-        nodeIndex = 1
-    end
-    codebraidKeyCurrentIndex[key] = nodeIndex + 1
-    nodeData = collectionData[nodeIndex]
-    if nodeData == nil then
-        return pandoc.Div(pandoc.Null(), {class=classes['classMissing']})
-    end
-    if nodeData['placeholder'] then
-        return pandoc.Div(pandoc.Null(), {class=classes['classWaiting']})
-    end
-    local isStale = codebraidKeyIsStale[key]
-    if isStale == nil then
-        isStale = false
-    end
-    if not isStale then
-        local attrHash = getCodebraidAttrHash(elem.id, elem.classes, elem.attributes)
-        local codeHash = pandoc.sha1(elem.text)
-        if attrHash ~= nodeData['attr_hash'] or codeHash ~= nodeData['code_hash'] or nodeData['inline'] then
-            isStale = true
-        end
-    end
-    codebraidKeyIsStale[key] = isStale
-
-    if nodeData['output'] ~= nil then
-        if nodeData['inline'] then
-            return pandoc.Div(pandoc.Null(), {class=classes['classWaiting']})
-        elseif isStale then
-            return pandoc.Div(nodeData['output'], {class=classes['classStale']})
-        elseif nodeData['old'] then
-            return pandoc.Div(nodeData['output'], {class=classes['classOld']})
-        else
-            return nodeData['output']
-        end
-    else
-        if nodeData['inline'] then
-            return pandoc.Div(pandoc.Null(), {class=classes['classWaiting']})
-        elseif isStale then
-            return pandoc.Div(pandoc.Null(), {class=classes['classStale']})
-        elseif nodeData['old'] then
-            return pandoc.Div(pandoc.Null(), {class=classes['classOld']})
-        else
-            return pandoc.Null()
-        end
-    end
+    return codeChunk(elem, false)
 end
+
+
 
 
 return {

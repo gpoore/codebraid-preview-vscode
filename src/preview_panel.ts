@@ -102,9 +102,12 @@ export default class PreviewPanel implements vscode.Disposable {
 	buildIsInProgress: boolean;
 	usingCodebraid: boolean;
 	codebraidIsInProgress: boolean;
+	codebraidHasErrors: boolean
 	didCheckInitialCodebraidCache: boolean;
 	oldCodebraidOutput: Map<string, Array<string>>;
 	currentCodebraidOutput: Map<string, Array<string>>;
+	codebraidProcessingStatus: Map<string, boolean>;
+	codebraidPlaceholderLangs: Map<string, string>;
 
 	constructor(editor: vscode.TextEditor, extension: ExtensionState) {
 		this.disposables = [];
@@ -231,11 +234,14 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.didCheckInitialCodebraidCache = false;
 		this.oldCodebraidOutput = new Map();
 		this.currentCodebraidOutput = new Map();
+		this.codebraidProcessingStatus = new Map();
+		this.codebraidPlaceholderLangs = new Map();
 		this.lastBuildTime = 0;
 		this.needsBuild = true;
 		this.buildIsScheduled = false;
 		this.buildIsInProgress = false;
 		this.codebraidIsInProgress = false;
+		this.codebraidHasErrors = false;
 		this.usingCodebraid = false;
 
 		vscode.workspace.onDidChangeTextDocument(
@@ -615,7 +621,7 @@ ${message}
 
 	async getPythonExecCommand(): Promise<Array<string> | undefined> {
 		// Get Python command currently set in Python extension
-		const pythonExtension = vscode.extensions.getExtension("ms-python.python");
+		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
 		if (!pythonExtension) {
 			return undefined;
 		}
@@ -853,16 +859,30 @@ ${message}
 			includingCodebraidOutput = false;
 		}
 		if (includingCodebraidOutput) {
-			buildProcess.stdin?.write([
+			let metadataStartList: Array<string> = [
 				`---`,
 				`codebraid_meta:`,
 				`  commonmark: ${fromFormatIsCommonmark}`,
-				`  codebraid_running: ${this.codebraidIsInProgress}`,
-				`codebraid_output:\n`,
-			].join('\n'));
+				`  running: ${this.codebraidIsInProgress}`,
+			];
+			if (this.codebraidIsInProgress && this.codebraidProcessingStatus.size > 0) {
+				metadataStartList.push(`  collection_processing:`);
+				for (const [k, v] of this.codebraidProcessingStatus) {
+					metadataStartList.push(`    "${k}": ${v}`);
+				}
+			}
+			if (this.codebraidPlaceholderLangs.size > 0) {
+				metadataStartList.push(`  placeholder_langs:`);
+				for (const [k, v] of this.codebraidPlaceholderLangs) {
+					metadataStartList.push(`    "${k}": "\`${v}\`"`);
+				}
+			}
+			metadataStartList.push('codebraid_output:\n');
+			let metadataStart = metadataStartList.join('\n');
+			buildProcess.stdin?.write(metadataStart);
 			// Offset ignores `---` for now, since document could start with
 			// that sequence
-			this.scrollSyncOffset += 3;
+			this.scrollSyncOffset += countNewlines(metadataStart) - 1;
 			let keySet = new Set();
 			if (this.currentCodebraidOutput.size > 0) {
 				for (const [key, yamlArray] of this.currentCodebraidOutput) {
@@ -951,7 +971,7 @@ ${message}
 	}
 
 
-	processCodebraidOutput(dataString: string) {
+	receiveCodebraidMessage(dataString: string) {
 		let dataStringTrimmed = dataString.trim();
 		if (dataStringTrimmed === '') {
 			return;
@@ -960,9 +980,49 @@ ${message}
 		try {
 			data = JSON.parse(dataStringTrimmed);
 		} catch {
-			// May need to add logging/debugging/alert
+			this.extension.outputChannel.appendLine(`Failed to process Codebraid output: ${dataString}`);
+			this.codebraidHasErrors = true;
 			return;
 		}
+		if (data.message_type === 'index') {
+			this.receiveCodebraidIndex(data);
+		} else if (data.message_type === 'output') {
+			this.receiveCodebraidOutput(data);
+		} else {
+			this.extension.outputChannel.appendLine(`Received unexpected, unsupported Codebraid output: ${dataString}`);
+			this.codebraidHasErrors = true;
+		}
+	}
+
+	receiveCodebraidIndex(data: any) {
+		this.codebraidProcessingStatus = new Map();
+		for (const codeCollection of data.code_collections) {
+			let key: string = `${codeCollection.type}.${codeCollection.lang}.${codeCollection.name}`;
+			this.codebraidProcessingStatus.set(key, true);
+			let length: number = codeCollection.length;
+			let yamlArray: Array<string>;
+			let oldYamlArray = this.oldCodebraidOutput.get(key);
+			if (oldYamlArray === undefined) {
+				yamlArray = Array(length).fill(`  - placeholder: true\n`);
+			} else {
+				yamlArray = [];
+				for (const [oldIndex, oldYaml] of oldYamlArray.entries()) {
+					if (oldIndex === length) {
+						break;
+					}
+					yamlArray.push(oldYaml + `    old: true\n`);
+				}
+				while (yamlArray.length < length) {
+					yamlArray.push(`  - placeholder: true\n`);
+				}
+			}
+			this.currentCodebraidOutput.set(key, yamlArray);
+		}
+		this.codebraidPlaceholderLangs = new Map(Object.entries(data.placeholder_langs));
+		this.update();
+	}
+
+	receiveCodebraidOutput(data: any) {
 		let key = `${data.code_collection.type}.${data.code_collection.lang}.${data.code_collection.name}`;
 		// index is 1-based
 		let [index, length] = data.number.split('/').map((numString: string) => Number(numString));
@@ -985,26 +1045,16 @@ ${message}
 		}
 		let yaml = yamlLines.join('');
 		let yamlArray = this.currentCodebraidOutput.get(key);
-		let oldYamlArray = this.oldCodebraidOutput.get(key);
 		if (yamlArray === undefined) {
-			if (oldYamlArray === undefined) {
-				yamlArray = Array(length).fill(`  - placeholder: true\n`);
-			} else {
-				yamlArray = [];
-				for (const [oldIndex, oldYaml] of oldYamlArray.entries()) {
-					if (oldIndex === length) {
-						break;
-					}
-					yamlArray.push(oldYaml + `    old: true\n`);
-				}
-				while (yamlArray.length < length) {
-					yamlArray.push(`  - placeholder: true\n`);
-				}
-			}
-			this.currentCodebraidOutput.set(key, yamlArray);
+			this.extension.outputChannel.appendLine(`Unexpected Codebraid output for uninitialized "${key}"`);
+			this.codebraidHasErrors = true;
+			return;
 		}
 		// index is 1-based
 		yamlArray[index-1] = yaml;
+		if (index === length) {
+			this.codebraidProcessingStatus.set(key, false);
+		}
 		this.update();
 	}
 
@@ -1017,29 +1067,41 @@ ${message}
 	}
 
 	private async runCodebraid(noExecute: boolean) {
-		if (!this.panel) {
-			return;
-		}
-		if (this.codebraidIsInProgress) {
-			return;
-		}
-		await this.setCodebraidCommand();
-		if (!this.codebraidCommand || !this.panel) {
+		if (!this.panel || this.codebraidIsInProgress) {
 			return;
 		}
 
 		// Typically, this will already be detected and set automatically
-		// during file reading by searching for `.cb{.-}`
+		// during file reading by searching for `.cb-` and `.cb.`
 		this.usingCodebraid = true;
+		this.codebraidIsInProgress = true;
+		this.codebraidHasErrors = false;
+		if (noExecute) {
+			this.extension.statusBarConfig.setCodebraidRunningNoExecute();
+		} else {
+			this.extension.statusBarConfig.setCodebraidRunningExecute();
+		}
 
-		if (!this.pandocPreviewDefaults.isValid) {
-			this.pandocPreviewDefaults.showErrorMessage();
+		await this.setCodebraidCommand();
+		if (!this.codebraidCommand || !this.panel) {
+			this.extension.statusBarConfig.setCodebraidWaiting();
+			this.codebraidIsInProgress = false;
 			return;
 		}
 
-		this.codebraidIsInProgress = true;
+		if (!this.pandocPreviewDefaults.isValid) {
+			this.extension.statusBarConfig.setCodebraidWaiting();
+			this.pandocPreviewDefaults.showErrorMessage();
+			this.codebraidIsInProgress = false;
+			return;
+		}
+
 		// Update preview to start any progress indicators, etc.
-		this.update();
+		this.panel.webview.postMessage(
+			{
+				command: 'codebraidPreview.startingCodebraid',
+			}
+		);
 
 		// Collect all data that depends on config and preview defaults so
 		// that everything from here onward isn't affected by config or
@@ -1077,12 +1139,6 @@ ${message}
 		this.oldCodebraidOutput = this.currentCodebraidOutput;
 		this.currentCodebraidOutput = new Map();
 
-		if (noExecute) {
-			this.extension.statusBarConfig.setCodebraidRunningNoExecute();
-		} else {
-			this.extension.statusBarConfig.setCodebraidRunningExecute();
-		}
-
 		const stderrBuffer: Array<string> = [];
 		const stdoutBuffer: Array<string> = [];
 		let codebraidProcessExitCode: number | undefined = await new Promise<number | undefined>((resolve, reject) => {
@@ -1111,7 +1167,7 @@ ${message}
 				} else {
 					stdoutBuffer.push(data.slice(0, index));
 					for (const jsonData of stdoutBuffer.join('').split('\n')) {
-						this.processCodebraidOutput(jsonData);
+						this.receiveCodebraidMessage(jsonData);
 					}
 					stdoutBuffer.length = 0;
 					stdoutBuffer.push(data.slice(index+1));
@@ -1125,15 +1181,16 @@ ${message}
 			}
 			codebraidProcess.stdin?.end();
 		}).catch((error) => {
-			if (this.panel) {
-				vscode.window.showErrorMessage(`Codebraid failed: ${error}`);
-			}
+			vscode.window.showErrorMessage(`Codebraid failed: ${error}`);
+			this.extension.statusBarConfig.setCodebraidWaiting();
+			this.codebraidProcessingStatus.clear();
+			this.update();
 			return undefined;
 		});
 
 		if (codebraidProcessExitCode === 0 || (codebraidProcessExitCode && codebraidProcessExitCode >= 4)) {
 			for (const jsonData of stdoutBuffer.join('').split('\n')) {
-				this.processCodebraidOutput(jsonData);
+				this.receiveCodebraidMessage(jsonData);
 			}
 		} else {
 			this.currentCodebraidOutput = this.oldCodebraidOutput;
@@ -1148,7 +1205,12 @@ ${message}
 			}
 		}
 		this.extension.statusBarConfig.setCodebraidWaiting();
+		this.codebraidProcessingStatus.clear();
 		this.codebraidIsInProgress = false;
+		if (this.codebraidHasErrors) {
+			vscode.window.showErrorMessage('Errors occurred during Codebraid run. See Output log for details.');
+		}
+		this.update();
 	}
 
 
