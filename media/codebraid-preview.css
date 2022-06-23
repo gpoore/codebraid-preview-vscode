@@ -144,6 +144,8 @@ div:is(
     .codebraid-output-old, .codebraid-output-stale
 ) {
     height: 2em;
+    margin-top: 4px;
+    margin-bottom: 4px;
 }
 
 span:is(
