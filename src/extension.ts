@@ -77,7 +77,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),
-		outputChannel: outputChannel,
+		log: (message: string) => {
+			const date = new Date();
+			outputChannel.appendLine(`[${date.toLocaleString()}]`);
+			if (message.endsWith('\n')) {
+				outputChannel.append(message);
+			} else {
+				outputChannel.appendLine(message);
+			}
+		},
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
 			runCodebraid: runCodebraidStatusBarItem,

@@ -980,7 +980,7 @@ ${message}
 		try {
 			data = JSON.parse(dataStringTrimmed);
 		} catch {
-			this.extension.outputChannel.appendLine(`Failed to process Codebraid output: ${dataString}`);
+			this.extension.log(`Failed to process Codebraid output: ${dataString}`);
 			this.codebraidHasErrors = true;
 			return;
 		}
@@ -989,7 +989,7 @@ ${message}
 		} else if (data.message_type === 'output') {
 			this.receiveCodebraidOutput(data);
 		} else {
-			this.extension.outputChannel.appendLine(`Received unexpected, unsupported Codebraid output: ${dataString}`);
+			this.extension.log(`Received unexpected, unsupported Codebraid output: ${dataString}`);
 			this.codebraidHasErrors = true;
 		}
 	}
@@ -1046,7 +1046,7 @@ ${message}
 		let yaml = yamlLines.join('');
 		let yamlArray = this.currentCodebraidOutput.get(key);
 		if (yamlArray === undefined) {
-			this.extension.outputChannel.appendLine(`Unexpected Codebraid output for uninitialized "${key}"`);
+			this.extension.log(`Unexpected Codebraid output for uninitialized "${key}"`);
 			this.codebraidHasErrors = true;
 			return;
 		}
