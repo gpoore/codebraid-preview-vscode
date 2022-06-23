@@ -30,6 +30,20 @@ let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
 
 export function activate(extensionContext: vscode.ExtensionContext) {
 	context = extensionContext;
+
+	const outputChannel = vscode.window.createOutputChannel('Codebraid Preview');
+	context.subscriptions.push(outputChannel);
+	const log = (message: string) => {
+		const date = new Date();
+		outputChannel.appendLine(`[${date.toLocaleString()}]`);
+		if (message.endsWith('\n')) {
+			outputChannel.append(message);
+		} else {
+			outputChannel.appendLine(message);
+		}
+	};
+	log('Activating extension');
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand(
 			'codebraidPreview.startPreview',
@@ -49,9 +63,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		),
 	);
 
-	let config = vscode.workspace.getConfiguration('codebraid.preview');
-	const outputChannel = vscode.window.createOutputChannel('Codebraid Preview');
-	context.subscriptions.push(outputChannel);
 	let openPreviewStatusBarItem = vscode.window.createStatusBarItem(
 		'codebraidPreview.startPreview',
 		vscode.StatusBarAlignment.Right,
@@ -72,20 +83,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		vscode.StatusBarAlignment.Right,
 		11
 	);
+
+	let config = vscode.workspace.getConfiguration('codebraid.preview');
 	extensionState = {
 		isWindows: isWindows,
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),
-		log: (message: string) => {
-			const date = new Date();
-			outputChannel.appendLine(`[${date.toLocaleString()}]`);
-			if (message.endsWith('\n')) {
-				outputChannel.append(message);
-			} else {
-				outputChannel.appendLine(message);
-			}
-		},
+		log: log,
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
 			runCodebraid: runCodebraidStatusBarItem,

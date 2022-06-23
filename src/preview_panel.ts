@@ -92,8 +92,10 @@ export default class PreviewPanel implements vscode.Disposable {
 	pandocPreviewArgs: Array<string>;
 	pandocWithCodebraidOutputArgs: Array<string>;
 	pandocExportArgs: Array<string>;
+	waitedForPythonExtensionActivation: boolean | undefined;
 	codebraidCommand: Array<string> | null | undefined;
 	codebraidArgs: Array<string>;
+	pythonPathToCodebraidCommandCache: Map<string, Array<string>>;
 	buildProcessOptions: child_process.ExecFileOptions;
 	codebraidProcessOptions: child_process.SpawnOptions;
 	lastBuildTime: number;
@@ -222,6 +224,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--standalone`,
 		];
 		this.codebraidArgs = ['pandoc', '--only-code-output', 'codebraid_preview'];
+		this.pythonPathToCodebraidCommandCache = new Map();
 		this.buildProcessOptions = {
 			maxBuffer: 1024*1024*16, // = <default>*16 = 16_777_216 bytes
 			cwd: this.cwd,
@@ -640,10 +643,33 @@ ${message}
 		// interface IExtensionApi
 		// https://github.com/microsoft/vscode-python/issues/12596
 		// https://github.com/microsoft/vscode-python/blob/3698950c97982f31bb9dbfc19c4cd8308acda284/src/client/api.ts
+		// Work around https://github.com/microsoft/vscode-python/issues/15467
+		// following the approach used in the mypy extension:
+		// https://github.com/matangover/mypy-vscode/blob/48162f345c7f14b96f29976660100ae1dd49cc0a/src/extension.ts#L694
 		let pythonExecCommand: Array<string> | undefined = pythonExtension.exports.settings.getExecutionDetails(currentUri).execCommand;
 		if (!pythonExecCommand) {
-			// Setting scoped to the first workspace folder
+			// Setting scoped to the first workspace folder, or global fallback
 			pythonExecCommand = pythonExtension.exports.settings.getExecutionDetails(undefined).execCommand;
+		}
+		if (!this.waitedForPythonExtensionActivation) {
+			if (pythonExecCommand && pythonExecCommand.length === 1 && pythonExecCommand[0] === 'python') {
+				let seconds = 0;
+				while (seconds < 5 && this.panel) {
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+					seconds += 1;
+					pythonExecCommand = pythonExtension.exports.settings.getExecutionDetails(currentUri).execCommand;
+					if (!pythonExecCommand) {
+						pythonExecCommand = pythonExtension.exports.settings.getExecutionDetails(undefined).execCommand;
+					}
+					if (!pythonExecCommand || pythonExecCommand.length !== 1 || pythonExecCommand[0] !== 'python') {
+						break;
+					}
+				}
+			}
+			this.waitedForPythonExtensionActivation = true;
+			this.extension.log(
+				`Retrieving initial Python exec command from Python extension:\n    ${pythonExecCommand?.join(' ')}`
+			);
 		}
 		return pythonExecCommand;
 	}
@@ -655,30 +681,45 @@ ${message}
 		let pythonPath: string | undefined;
 		const pythonExecCommand = await this.getPythonExecCommand();
 		if (pythonExecCommand) {
-			// May need to handle other elements of pythonExecCommand in future.
-			pythonPath = pythonExecCommand[0];
-		} else {
+			if (pythonExecCommand.length === 1) {
+				pythonPath = pythonExecCommand[0];
+			} else {
+				for (const elem of pythonExecCommand) {
+					if (elem.includes('python')) {
+						pythonPath = elem;
+						break;
+					}
+				}
+			}
+		}
+		if (!pythonPath) {
 			pythonPath = vscode.workspace.getConfiguration('python').defaultInterpreterPath;
+		}
+		if (pythonPath && this.pythonPathToCodebraidCommandCache.has(pythonPath)) {
+			this.codebraidCommand = this.pythonPathToCodebraidCommandCache.get(pythonPath);
+			return;
 		}
 		if (pythonPath) {
 			const pythonPathElems: Array<string> = pythonPath.replaceAll('\\', '/').split('/');
-			pythonPathElems.pop();  // Remove python executable
-			let binaryDir: string | undefined;
-			if (pythonPathElems[-1] === 'bin' || pythonPathElems[-1] === 'Scripts') {
-				binaryDir = pythonPathElems[-1];
-				pythonPathElems.pop();
+			if (pythonPathElems.length > 1 && pythonPathElems.at(-1)?.includes('python')) {
+				pythonPathElems.pop();  // Remove python executable
+				let binaryDir: string | undefined;
+				if (pythonPathElems.at(-1) === 'bin' || pythonPathElems.at(-1) === 'Scripts') {
+					binaryDir = pythonPathElems.at(-1);
+					pythonPathElems.pop();
+				}
+				const pythonRootPath: string = pythonPathElems.join('/');
+				const pythonRootPathQuoted: string = `"${pythonPathElems.join('/')}"`;
+				try {
+					await fs.promises.access(`${pythonRootPath}/conda-meta`, fs.constants.X_OK).then(() => {
+						// Using full paths to avoid https://github.com/conda/conda/issues/11174
+						codebraidCommand.push(...['conda', 'run', '--prefix', pythonRootPathQuoted, '--no-capture-output']);
+					});
+				} catch {
+				}
+				codebraidCommand.push(`${pythonRootPathQuoted}/${binaryDir ? binaryDir : 'Scripts'}/codebraid`);
+				isCodebraidCompatible = await checkCodebraidVersion(codebraidCommand);
 			}
-			const pythonRootPath: string = pythonPathElems.join('/');
-			const pythonRootPathQuoted: string = `"${pythonPathElems.join('/')}"`;
-			try {
-				await fs.promises.access(`${pythonRootPath}/conda-meta`, fs.constants.X_OK).then(() => {
-					// Using full paths to avoid https://github.com/conda/conda/issues/11174
-					codebraidCommand.push(...['conda', 'run', '--prefix', pythonRootPathQuoted, '--no-capture-output']);
-				});
-			} catch {
-			}
-			codebraidCommand.push(`${pythonRootPathQuoted}/${binaryDir ? binaryDir : 'Scripts'}/codebraid`);
-			isCodebraidCompatible = await checkCodebraidVersion(codebraidCommand);
 		}
 		if (isCodebraidCompatible === undefined) {
 			codebraidCommand = ['codebraid'];
@@ -687,9 +728,14 @@ ${message}
 				if (this.codebraidCommand === undefined || (Array.isArray(this.codebraidCommand) &&
 						(this.codebraidCommand.length !== 1 || this.codebraidCommand[0] !== 'codebraid'))) {
 					vscode.window.showWarningMessage([
-						`The Python interpreter selected in VS Code does not have codebraid installed.`,
-						`Falling back to codebraid on PATH.`,
+						`The Python interpreter selected in VS Code does not have codebraid installed or it could not be found.`,
+						`Falling back to codebraid on PATH.`
 					].join(' '));
+					this.extension.log([
+						`Could not find codebraid installation as part of Python interpreter selected in VS code:`,
+						`    ${pythonPath}`,
+						`Falling back to codebraid on PATH.`
+					].join('\n'));
 				}
 			}
 		}
@@ -715,7 +761,13 @@ ${message}
 				`Upgrade from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
 			].join(' '));
 		} else {
+			if (this.codebraidCommand === undefined) {
+				this.extension.log(`Setting initial Codebraid command:\n    ${codebraidCommand.join(' ')}`);
+			}
 			this.codebraidCommand = codebraidCommand;
+			if (pythonPath && (codebraidCommand.length !== 1 || codebraidCommand[0] !== 'codebraid')) {
+				this.pythonPathToCodebraidCommandCache.set(pythonPath, codebraidCommand);
+			}
 		}
 	}
 

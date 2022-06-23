@@ -3,6 +3,14 @@
 
 ## v0.6.0 (dev)
 
+* Fixed a bug that prevented `codebraid` executable from being located in
+  Python installations with the `python` executable under `bin/` or `Scripts/`
+  rather than at the root of the environment (#5).
+
+* Improved and optimized process for finding `codebraid` executable.
+
+* Updated KaTeX to v0.16.0.
+
 * Improved display of Codebraid output in the preview.  Code chunks that have
   not yet been processed/executed by Codebraid and thus do not have output are
   indicated by placeholder boxes.  Output from modified code chunks or from
