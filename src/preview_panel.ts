@@ -104,7 +104,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	buildIsInProgress: boolean;
 	usingCodebraid: boolean;
 	codebraidIsInProgress: boolean;
-	codebraidHasErrors: boolean
+	codebraidHasMessageErrors: boolean
 	didCheckInitialCodebraidCache: boolean;
 	oldCodebraidOutput: Map<string, Array<string>>;
 	currentCodebraidOutput: Map<string, Array<string>>;
@@ -244,7 +244,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.buildIsScheduled = false;
 		this.buildIsInProgress = false;
 		this.codebraidIsInProgress = false;
-		this.codebraidHasErrors = false;
+		this.codebraidHasMessageErrors = false;
 		this.usingCodebraid = false;
 
 		vscode.workspace.onDidChangeTextDocument(
@@ -1033,7 +1033,7 @@ ${message}
 			data = JSON.parse(dataStringTrimmed);
 		} catch {
 			this.extension.log(`Failed to process Codebraid output: ${dataString}`);
-			this.codebraidHasErrors = true;
+			this.codebraidHasMessageErrors = true;
 			return;
 		}
 		if (data.message_type === 'index') {
@@ -1042,7 +1042,7 @@ ${message}
 			this.receiveCodebraidOutput(data);
 		} else {
 			this.extension.log(`Received unexpected, unsupported Codebraid output: ${dataString}`);
-			this.codebraidHasErrors = true;
+			this.codebraidHasMessageErrors = true;
 		}
 	}
 
@@ -1099,7 +1099,7 @@ ${message}
 		let yamlArray = this.currentCodebraidOutput.get(key);
 		if (yamlArray === undefined) {
 			this.extension.log(`Unexpected Codebraid output for uninitialized "${key}"`);
-			this.codebraidHasErrors = true;
+			this.codebraidHasMessageErrors = true;
 			return;
 		}
 		// index is 1-based
@@ -1127,7 +1127,7 @@ ${message}
 		// during file reading by searching for `.cb-` and `.cb.`
 		this.usingCodebraid = true;
 		this.codebraidIsInProgress = true;
-		this.codebraidHasErrors = false;
+		this.codebraidHasMessageErrors = false;
 		if (noExecute) {
 			this.extension.statusBarConfig.setCodebraidRunningNoExecute();
 		} else {
@@ -1169,6 +1169,7 @@ ${message}
 
 		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, fromFormatIsCommonmark);
 		if (!maybeFileTexts) {
+			this.extension.statusBarConfig.setCodebraidWaiting();
 			this.codebraidIsInProgress = false;
 			return;
 		}
@@ -1193,7 +1194,7 @@ ${message}
 
 		const stderrBuffer: Array<string> = [];
 		const stdoutBuffer: Array<string> = [];
-		let codebraidProcessExitCode: number | undefined = await new Promise<number | undefined>((resolve, reject) => {
+		let codebraidProcessExitStatus: number | string = await new Promise<number | string>((resolve) => {
 			const codebraidProcess = child_process.spawn(
 				executable,
 				args,
@@ -1207,7 +1208,7 @@ ${message}
 				resolve(exitCode);
 			});
 			codebraidProcess.on('error', (error: any) => {
-				reject(error);
+				resolve(`${error}`);
 			});
 			codebraidProcess.stderr?.on('data', (data: string) => {
 				stderrBuffer.push(data);
@@ -1232,35 +1233,33 @@ ${message}
 				}
 			}
 			codebraidProcess.stdin?.end();
-		}).catch((error) => {
-			vscode.window.showErrorMessage(`Codebraid failed: ${error}`);
-			this.extension.statusBarConfig.setCodebraidWaiting();
-			this.codebraidProcessingStatus.clear();
-			this.update();
-			return undefined;
 		});
 
-		if (codebraidProcessExitCode === 0 || (codebraidProcessExitCode && codebraidProcessExitCode >= 4)) {
+		if (typeof(codebraidProcessExitStatus) === 'string') {
+			const message = `Codebraid process failed: ${codebraidProcessExitStatus}`;
+			vscode.window.showErrorMessage(message);
+			this.extension.log(message);
+			this.currentCodebraidOutput = this.oldCodebraidOutput;
+		} else if (codebraidProcessExitStatus > 0 && codebraidProcessExitStatus < 4) {
+			let message: string;
+			if (stderrBuffer.length === 0) {
+				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}`;
+		 	} else {
+				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}:\n${stderrBuffer.join('')}`;
+			}
+			vscode.window.showErrorMessage(message);
+			this.extension.log(message);
+			this.currentCodebraidOutput = this.oldCodebraidOutput;
+		} else {
 			for (const jsonData of stdoutBuffer.join('').split('\n')) {
 				this.receiveCodebraidMessage(jsonData);
-			}
-		} else {
-			this.currentCodebraidOutput = this.oldCodebraidOutput;
-			if (codebraidProcessExitCode === undefined) {
-				vscode.window.showErrorMessage('Codebraid process failed to start or lost communication.');
-			} else if (stderrBuffer.length === 0) {
-				vscode.window.showErrorMessage(`Codebraid process failed with exit code ${codebraidProcessExitCode}.`);
-		 	} else {
-				vscode.window.showErrorMessage(
-					`Codebraid process failed with exit code ${codebraidProcessExitCode}: ${stderrBuffer.join('')}`
-				);
 			}
 		}
 		this.extension.statusBarConfig.setCodebraidWaiting();
 		this.codebraidProcessingStatus.clear();
 		this.codebraidIsInProgress = false;
-		if (this.codebraidHasErrors) {
-			vscode.window.showErrorMessage('Errors occurred during Codebraid run. See Output log for details.');
+		if (this.codebraidHasMessageErrors) {
+			vscode.window.showErrorMessage('Received unexpected or invalid output from Codebraid. See Output log for details.');
 		}
 		this.update();
 	}
