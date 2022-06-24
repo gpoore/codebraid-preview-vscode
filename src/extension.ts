@@ -347,7 +347,7 @@ function exportDocument() {
 			return;
 		}
 		let savePath = saveUri.fsPath;
-		if (/[\u0000-\u001F\u007F\u0080—\u009F*?"<>|$`!]|(?<!^[a-zA-z]):(?![\\/])/.test(savePath)) {
+		if (/[\u0000-\u001F\u007F\u0080—\u009F*?"<>|$`!%]|(?<!^[a-zA-z]):|:(?![\\/])/.test(savePath)) {
 			// Don't allow command characters, characters invalid in Windows
 			// file names, or characters that cause interpolation when
 			// double-quoted in Linux shells.
