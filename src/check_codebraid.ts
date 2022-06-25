@@ -9,7 +9,7 @@
 import * as child_process from 'child_process';
 
 
-const minVersion: [number, number, number] = [0, 8, 0];
+const minVersion: [number, number, number] = [0, 9, 0];
 const minMajor = minVersion[0];
 const minMinor = minVersion[1];
 const minPatch = minVersion[2];

@@ -221,9 +221,13 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputLuaFilter}"`,
 		];
 		this.pandocExportArgs = [
-			`--standalone`,
+			'--standalone',
 		];
-		this.codebraidArgs = ['pandoc', '--only-code-output', 'codebraid_preview'];
+		this.codebraidArgs = [
+			'pandoc',
+			'--only-code-output', 'codebraid_preview',
+			'--stdin-json-header',
+		];
 		this.pythonPathToCodebraidCommandCache = new Map();
 		this.buildProcessOptions = {
 			maxBuffer: 1024*1024*16, // = <default>*16 = 16_777_216 bytes
@@ -1174,6 +1178,18 @@ ${message}
 			return;
 		}
 		const fileTexts: Array<string> = maybeFileTexts;
+		const stdinOrigins: Array<{path: string, lines: number}> = [];
+		const stdinTexts: Array<string> = [];
+		for (const [index, fileText] of fileTexts.entries()) {
+			const fileName = fileNames[index];
+			let lineCount = countNewlines(fileText);
+			stdinTexts.push(fileText);
+			if (!fileText.endsWith('\n\n')) {
+				stdinTexts.push('\n\n');
+				lineCount += 2;
+			}
+			stdinOrigins.push({path: fileName, lines: lineCount});
+		}
 
 		const executable: string = this.codebraidCommand[0];
 		const args: Array<string> = this.codebraidCommand.slice(1);
@@ -1226,11 +1242,10 @@ ${message}
 					stdoutBuffer.push(data.slice(index+1));
 				}
 			});
-			for (const fileText of fileTexts) {
-				codebraidProcess.stdin?.write(fileText);
-				if (fileText.slice(0, -2) !== '\n\n') {
-					codebraidProcess.stdin?.write('\n\n');
-				}
+			codebraidProcess.stdin?.write(JSON.stringify({origins: stdinOrigins}));
+			codebraidProcess.stdin?.write('\n');
+			for (const stdinText of stdinTexts) {
+				codebraidProcess.stdin?.write(stdinText);
 			}
 			codebraidProcess.stdin?.end();
 		});

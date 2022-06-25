@@ -3,6 +3,14 @@
 
 ## v0.6.0 (dev)
 
+* Minimum supported Codebraid is now v0.9.0.  The preview now shows correct
+  file names and line numbers for errors/warnings related to the Markdown
+  source, rather than using file names like `<string>` and line numbers that
+  are incorrect when multiple Markdown sources are concatenated.  The preview
+  now shares cache files with normal Codebraid processing, rather than
+  creating a separate cache entry.  All of this is based on the new Codebraid
+  option `--stdin-json-header`.
+
 * Fixed a bug that prevented `codebraid` executable from being located in
   Python installations with the `python` executable under `bin/` or `Scripts/`
   rather than at the root of the environment (#5).
