@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.6.0 (dev)
+## v0.6.0 (2022-06-25)
 
 * Minimum supported Codebraid is now v0.9.0.  The preview now shows correct
   file names and line numbers for errors/warnings related to the Markdown
