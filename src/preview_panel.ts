@@ -77,7 +77,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	resourceWebviewUris: Record<string, vscode.Uri>;
 	resourcePaths: Record<string, string>;
 	baseTag: string;
-	contentSecurityOptions: Record<string, Array<string>>;
+	contentSecurityOptions: Map<string, Array<string>>;
 	contentSecurityTag: string;
 	codebraidPreviewJsTag: string;
 	sourceSupportsScrollSync: boolean;
@@ -187,15 +187,15 @@ export default class PreviewPanel implements vscode.Disposable {
 			pandocCodebraidOutputLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
-		this.contentSecurityOptions = {
-			'style-src': [`${this.panel.webview.cspSource}`, `'unsafe-inline'`,],
-			'font-src': [`${this.panel.webview.cspSource}`],
-			'img-src': [`${this.panel.webview.cspSource}`],
-			'script-src': [`${this.panel.webview.cspSource}`, `'unsafe-inline'`],
-		};
+		this.contentSecurityOptions = new Map([
+			['style-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
+			['font-src', [`${this.panel.webview.cspSource}`]],
+			['img-src', [`${this.panel.webview.cspSource}`]],
+			['script-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
+		]);
 		let contentSecurityContent: Array<string> = [];
-		for (const src in this.contentSecurityOptions) {
-			contentSecurityContent.push(`${src} ${this.contentSecurityOptions[src].join(' ')};`);
+		for (const [src, opt] of this.contentSecurityOptions) {
+			contentSecurityContent.push(`${src} ${opt.join(' ')};`);
 		}
 		this.contentSecurityTag = [
 			`<meta http-equiv="Content-Security-Policy"`,
