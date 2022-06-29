@@ -90,6 +90,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Subprocess
 	// ----------
 	pandocPreviewArgs: Array<string>;
+	pandocShowRawArgs: Array<string>;
 	pandocWithCodebraidOutputArgs: Array<string>;
 	pandocExportArgs: Array<string>;
 	waitedForPythonExtensionActivation: boolean | undefined;
@@ -104,7 +105,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	buildIsInProgress: boolean;
 	usingCodebraid: boolean;
 	codebraidIsInProgress: boolean;
-	codebraidHasMessageErrors: boolean
+	codebraidHasMessageErrors: boolean;
 	didCheckInitialCodebraidCache: boolean;
 	oldCodebraidOutput: Map<string, Array<string>>;
 	currentCodebraidOutput: Map<string, Array<string>>;
@@ -182,6 +183,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		};
 		this.resourcePaths = {
 			pandocSourcePosLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-sync.lua'),
+			pandocShowRawFilter: this.extension.context.asAbsolutePath('scripts/pandoc-raw.lua'),
 			pandocCodebraidOutputLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
@@ -216,6 +218,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--css=${this.resourceWebviewUris.codebraidCss}`,
 			`--katex=${this.resourceWebviewUris.katex}/`,
 			`--to=html`,
+		];
+		this.pandocShowRawArgs = [
+			`--lua-filter="${this.resourcePaths.pandocShowRawFilter}"`,
 		];
 		this.pandocWithCodebraidOutputArgs = [
 			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputLuaFilter}"`,
@@ -868,6 +873,9 @@ ${message}
 			}
 		}
 		args.push(...this.pandocPreviewArgs);
+		if (this.extension.config.pandoc.showRaw) {
+			args.push(...this.pandocShowRawArgs);
+		}
 		if (this.usingCodebraid) {
 			args.push(...this.pandocWithCodebraidOutputArgs);
 		}

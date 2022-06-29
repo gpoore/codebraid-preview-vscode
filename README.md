@@ -124,6 +124,9 @@ For code execution, install the latest version of
   `input-files`, or if `input-files` is not defined, then the preview defaults
   file is used.
 
+* `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
+  representation of non-HTML raw content `{=format}` in the preview.
+
 
 ## Codebraid configuration
 

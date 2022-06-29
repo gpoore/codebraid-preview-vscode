@@ -206,3 +206,39 @@ div.codebraid-output-none:is(
     background-size: 4px 4px;
     background-repeat: repeat;
 }
+
+
+
+
+/* Style non-html raw output that is displayed verbatim --------------------*/
+
+.pandoc-raw > pre, span.pandoc-raw {
+    border-style: solid;
+    border-color: darkkhaki;
+    border-width: 2px;
+    border-radius: 0px;
+    box-shadow: 2px 2px 2px rgb(184, 134, 11, 0.5);
+}
+span.pandoc-raw {
+    display: inline-block;
+    margin-left: 2px;
+    margin-right: 2px;
+}
+span.pandoc-raw > code {
+    padding-inline: 0.5ex;
+}
+.pandoc-raw::before {
+    content: attr(data-pandoc-raw-attr);
+    color: black;
+    background-color: darkkhaki;
+    display: inline-block;
+    font-size: large;
+}
+div.pandoc-raw::before {
+    padding: 4px;
+}
+span.pandoc-raw::before {
+    padding-inline: 4px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}

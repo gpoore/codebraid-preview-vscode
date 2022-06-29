@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.6.0",
+  "version": "0.7.0-dev1",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/vscode-codebraid-preview",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -98,6 +98,11 @@
           "pattern": "^[^\\\\/]+$",
           "patternErrorMessage": "Must be a file name without a path to the file.",
           "description": "Special Pandoc defaults file in document directory.  If it exists and defines \"input-files\", the preview will automatically work with all files in a multi-file document."
+        },
+        "codebraid.preview.pandoc.showRaw": {
+          "type": "boolean",
+          "default": true,
+          "description": "Display a verbatim representation of non-HTML raw content `{=format}` in the preview."
         }
       }
     }

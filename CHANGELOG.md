@@ -1,6 +1,13 @@
 # Change Log
 
 
+## v0.7.0 (dev)
+
+* Added setting `codebraid.preview.pandoc.showRaw`.  This provides a verbatim
+  representation of non-HTML raw content `{=format}` in the preview.
+
+
+
 ## v0.6.0 (2022-06-25)
 
 * Minimum supported Codebraid is now v0.9.0.  The preview now shows correct
