@@ -29,11 +29,11 @@ currently available.  The preview always remains live.
 * **Full bidirectional scroll sync.**  This requires processing the document
   as `commonmark_x`, which is [CommonMark](https://commonmark.org/) plus
   [Pandoc extensions](https://github.com/jgm/pandoc/wiki/Roadmap).
-  `commonmark_x` has most features of normal Pandoc Markdown and continues to
-  gain new features.
+  `commonmark_x` has most of the features in Pandoc's Markdown and continues
+  to gain new features.
 
 * **Math support with [KaTeX](https://katex.org/).**  Surround LaTeX math with
-  single dollars signs `$` for inline math or double dollar signs `$$` for
+  single dollar signs `$` for inline math or double dollar signs `$$` for
   block math, following standard Pandoc conventions.
 
 * **Adjustable scroll sync directions.**  Once a preview window is open, click
@@ -48,12 +48,12 @@ currently available.  The preview always remains live.
   document with Pandoc" command (`Ctrl+Shift+P`, then type command).
 
 * **Scroll-sync support for multi-file documents.** Pandoc allows you to
-  divide a document into multiple files.  It can combine multiple files into a
-  single output document at build time.  Codebraid Preview can display such
-  documents as long as all document files are in the same directory (folder)
-  if you create a YAML file that lists the documents to be combined.  For
-  example, suppose your document is divided into `chapter_1.md` and
-  `chapter_2.md`, both in the same directory.  Simple create a file named
+  divide a document into multiple files that are combined into a single output
+  document at build time.  Codebraid Preview can display such documents as
+  long as all document files are in the same directory (folder).  For
+  multi-file documents, create a YAML file that lists the document files to be
+  combined.  For example, suppose your document is divided into `chapter_1.md`
+  and `chapter_2.md`, both in the same directory.  Simply create a file named
   `_codebraid_preview.yaml` with this contents:
 
   ```
@@ -70,9 +70,17 @@ currently available.  The preview always remains live.
 
 * **Execute code.** [Codebraid](https://github.com/gpoore/codebraid/) allows
   code blocks or inline code in Pandoc Markdown documents to be executed, with
-  output embedded in the document.  Simply add a Codebraid class to your code,
-  then click the "Codebraid" button in the status bar (bottom right) or use
-  the "Run code with Codebraid" command (`Ctrl+Shift+P`, then type command).
+  output embedded in the document.  Simply add Codebraid attributes to your
+  code, then click the "Codebraid" button in the status bar (bottom right) or
+  use the "Run code with Codebraid" command (`Ctrl+Shift+P`, then type
+  command).
+
+  For example, to execute a Python fenced code block, simply add the
+  attributes `{.python .cb-run}` immediately after the opening fence ` ``` `,
+  so that the code block begins with ` ```{.python .cb-run}`.  Then click the
+  Codebraid button.  To use a Jupyter kernel for code execution, with a notebook-style display of output, use
+  ` ```{.python .cb-nb jupyter_kernel=python3}` in the first code block to be
+  executed and ` ```{.python .cb-nb}` in subsequent code blocks.
 
   When you first load a document that uses Codebraid, any cached code output
   will automatically be loaded and displayed in the document.  The preview
@@ -170,11 +178,7 @@ not associated with the extension is disabled.
 Code is never automatically executed with Codebraid.  Code is only ever
 executed when a Codebraid class is added to a code block or inline code, and
 then the "Codebraid" button is clicked (or the "Run code with Codebraid"
-command is invoked).  This is why documents using Codebraid currently do not
-automatically refresh when changed.  The core of Codebraid has just been
-completely reimplemented.  As a result, an upcoming version of Codebraid is
-expected to decouple code execution from document update.  This should allow
-automatic document refresh without code execution.
+command is invoked).
 
 
 ## Supporting this project
