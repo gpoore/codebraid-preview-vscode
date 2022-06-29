@@ -6,6 +6,9 @@
 * Added setting `codebraid.preview.pandoc.showRaw`.  This provides a verbatim
   representation of non-HTML raw content `{=format}` in the preview.
 
+* Added more details and progress animations in the webview display that is
+  shown before Pandoc finishes creating the initial preview.
+
 
 
 ## v0.6.0 (2022-06-25)

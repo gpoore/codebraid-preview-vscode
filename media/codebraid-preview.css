@@ -72,6 +72,43 @@ pre.numberSource code > span {
 
 
 
+/* Progress indicators while waiting for initial preview -------------------*/
+@keyframes codebraid-updating {
+    0% { color: skyblue;}
+    50% { color: cornflowerblue;}
+    100% { color: steelblue;}
+}
+@keyframes codebraid-updating-running {
+    0% { color: skyblue; transform: rotate(0deg);}
+    50% { color: cornflowerblue; transform: rotate(90deg);}
+    100% { color: steelblue; transform: rotate(180deg);}
+}
+.codebraid-updating-anim {
+    animation: codebraid-updating 1s infinite;
+}
+.codebraid-updating {
+    font-size: x-large;
+}
+.codebraid-updating::before {
+    color: cornflowerblue;
+    font-family: "codicon";
+    display: inline-block;
+    margin-right: 1em;
+}
+.codebraid-updating-waiting::before {
+    content: "\ebb5";
+}
+.codebraid-updating-running::before {
+    content: "\ea77";
+    animation: codebraid-updating-running 1s infinite;
+}
+.codebraid-updating-finished::before {
+    content: "\eba4";
+}
+
+
+
+
 /* Indicate output status --------------------------------------------------*/
 
 .codebraid-output-missing::before,

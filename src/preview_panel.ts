@@ -18,6 +18,9 @@ import {countNewlines} from './util';
 import {checkCodebraidVersion, minCodebraidVersion} from './check_codebraid';
 
 
+type UpdatingStatus = null | 'waiting' | 'running' | 'finished';
+
+
 
 
 export default class PreviewPanel implements vscode.Disposable {
@@ -86,6 +89,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	scrollSyncOffset: number;
 	scrollSyncMap: Map<string, [number, number]> | undefined;
 	scrollSyncMapMaxLine: number;
+	isShowingUpdatingMessage: boolean;
 
 	// Subprocess
 	// ----------
@@ -208,7 +212,8 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.isScrollingEditorWithPreview = false;
 		this.scrollSyncOffset = 0;
 		this.scrollSyncMapMaxLine = 0;
-		this.showUpdatingMessage();
+		this.isShowingUpdatingMessage = true;
+		this.showUpdatingMessage(null, null);
 
 		this.pandocPreviewArgs = [
 			`--standalone`,
@@ -308,6 +313,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	${this.contentSecurityTag}
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<link rel="stylesheet" href="${this.resourceWebviewUris.vscodeCss}">
+	<link rel="stylesheet" href="${this.resourceWebviewUris.vscodeCodicon}">
 	<link rel="stylesheet" href="${this.resourceWebviewUris.codebraidCss}">
 	<style>
 	body {
@@ -327,13 +333,31 @@ ${message}
 </html>`;
 	}
 
-	showUpdatingMessage() {
+	updatingMessageClassMap = new Map([
+		['waiting',  'codebraid-updating codebraid-updating-waiting'],
+		['running',  'codebraid-updating codebraid-updating-running'],
+		['finished', 'codebraid-updating codebraid-updating-finished'],
+	]);
+
+	showUpdatingMessage(codebraidStatus: UpdatingStatus, pandocStatus: UpdatingStatus) {
 		if (!this.panel) {
 			return;
 		}
+		let messageList: Array<string> = [];
+		if (codebraidStatus === null && pandocStatus === null) {
+			messageList.push('<h1>Updating Codebraid Preview<span class="codebraid-updating-anim">...</span></h1>');
+		} else {
+			messageList.push('<h1>Updating Codebraid Preview...</h1>');
+		}
+		if (codebraidStatus !== null) {
+			messageList.push(`<p class="${this.updatingMessageClassMap.get(codebraidStatus)}">Codebraid: load cache</p>`);
+		}
+		if (pandocStatus !== null) {
+			messageList.push(`<p class="${this.updatingMessageClassMap.get(pandocStatus)}">Pandoc: convert</p>`);
+		}
 		this.panel.webview.html = this.formatMessage(
 			'Updating Codebraid Preview...',
-			'<h1>Updating Codebraid Preview...</h1>'
+			messageList.join('\n')
 		);
 	}
 
@@ -595,6 +619,7 @@ ${message}
 		if (!this.panel) {
 			return;
 		}
+		this.isShowingUpdatingMessage = false;
 		this.panel.webview.html = html.replace(
 			`<head>`,
 			`<head>\n  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}`
@@ -857,7 +882,15 @@ ${message}
 
 		if (this.usingCodebraid && !this.didCheckInitialCodebraidCache && !this.codebraidIsInProgress) {
 			this.didCheckInitialCodebraidCache = true;
+			if (this.isShowingUpdatingMessage) {
+				this.showUpdatingMessage('running', 'waiting');
+			}
 			await this.runCodebraidNoExecute();
+			if (this.isShowingUpdatingMessage) {
+				this.showUpdatingMessage('finished', 'running');
+			}
+		} else if (this.isShowingUpdatingMessage) {
+			this.showUpdatingMessage(null, 'running');
 		}
 
 		const executable: string = 'pandoc';
