@@ -15,7 +15,7 @@ own built-in code execution system.  When code is running, the preview still
 updates whenever the document is modified, displaying all code output that is
 currently available.  The preview always remains live.
 
-![VS Code editor with Codebraid Preview](https://raw.githubusercontent.com/gpoore/vscode-codebraid-preview/master/readme_media/editor_with_preview.png)
+![VS Code editor with Codebraid Preview](https://raw.githubusercontent.com/gpoore/codebraid-preview-vscode/master/readme_media/editor_with_preview.png)
 
 
 ## Features
