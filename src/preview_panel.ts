@@ -19,8 +19,7 @@ import {checkCodebraidVersion, minCodebraidVersion} from './check_codebraid';
 
 
 type UpdatingStatus = null | 'waiting' | 'running' | 'finished';
-
-
+const yamlMetadataRegex = /^---[ \t]*\r?\n.+?\n(?:---|\.\.\.)[ \t]*\r?\n/us;
 
 
 export default class PreviewPanel implements vscode.Disposable {
@@ -1010,7 +1009,7 @@ ${message}
 			this.scrollSyncMap = undefined;
 			for (const [fileIndex, fileText] of fileTexts.entries()) {
 				if (fileIndex === 0 && includingCodebraidOutput) {
-					if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+					if (yamlMetadataRegex.test(fileText)) {
 						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
 					} else {
 						buildProcess.stdin?.write('---\n\n');
@@ -1035,7 +1034,7 @@ ${message}
 			for (const [fileIndex, fileText] of fileTexts.entries()) {
 				const fileName = fileNames[fileIndex];
 				if (fileIndex === 0 && includingCodebraidOutput) {
-					if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+					if (yamlMetadataRegex.test(fileText)) {
 						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
 					} else {
 						buildProcess.stdin?.write('---\n\n');
@@ -1412,7 +1411,7 @@ ${message}
 		}
 		for (const [fileIndex, fileText] of fileTexts.entries()) {
 			if (fileIndex === 0 && includingCodebraidOutput) {
-				if (/^---[ \t]*\n.+?\n(?:---|\.\.\.)[ \t]*\n/.test(fileText)) {
+				if (yamlMetadataRegex.test(fileText)) {
 					buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
 				} else {
 					buildProcess.stdin?.write('---\n\n');

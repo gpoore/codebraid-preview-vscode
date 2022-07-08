@@ -1,6 +1,12 @@
 # Change Log
 
 
+## v0.8.0 (dev)
+
+* Fixed a bug that prevented YAML metadata from working with Codebraid.
+
+
+
 ## v0.7.0 (2022-06-29)
 
 * Added setting `codebraid.preview.pandoc.showRaw`.  This provides a verbatim
