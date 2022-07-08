@@ -5,6 +5,8 @@
 
 * Fixed a bug that prevented YAML metadata from working with Codebraid.
 
+* Fixed a bug that prevented identification of inherited languages (for
+  example, with `.cb-paste`).
 
 
 ## v0.7.0 (2022-06-29)

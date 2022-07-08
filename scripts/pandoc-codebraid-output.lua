@@ -159,7 +159,7 @@ function getCodebraidLangAndCommandClass(classes)
             if index > 1 then
                 lang = classes[1]
             end
-            if lang:match('^%d+$') then
+            if lang == '' then
                 actualLang = codebraidPlaceholderLangs[tostring(placeholderLangNum)]
                 if actualLang ~= nil then
                     lang = actualLang
