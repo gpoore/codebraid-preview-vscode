@@ -1076,7 +1076,7 @@ ${message}
 		try {
 			data = JSON.parse(dataStringTrimmed);
 		} catch {
-			this.extension.log(`Failed to process Codebraid output: ${dataString}`);
+			this.extension.log(`Failed to process Codebraid output:\n${dataString}`);
 			this.codebraidHasMessageErrors = true;
 			return;
 		}
@@ -1085,7 +1085,7 @@ ${message}
 		} else if (data.message_type === 'output') {
 			this.receiveCodebraidOutput(data);
 		} else {
-			this.extension.log(`Received unexpected, unsupported Codebraid output: ${dataString}`);
+			this.extension.log(`Received unexpected, unsupported Codebraid output:\n${dataString}`);
 			this.codebraidHasMessageErrors = true;
 		}
 	}
