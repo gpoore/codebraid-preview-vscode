@@ -3,10 +3,17 @@
 
 ## v0.8.0 (dev)
 
+* `_codebraid_preview.yaml` now supports essentially all
+  [Pandoc defaults options](https://pandoc.org/MANUAL.html#defaults-files)
+  and no longer limits the characters allowed in filter file names (#2).
+  Previously, only `input-files`, `input-file`, `from`, and `filters` were
+  supported.
+
 * Fixed a bug that prevented YAML metadata from working with Codebraid.
 
 * Fixed a bug that prevented identification of inherited languages (for
   example, with `.cb-paste`).
+
 
 
 ## v0.7.0 (2022-06-29)

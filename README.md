@@ -119,18 +119,34 @@ For code execution, install the latest version of
   directory via `os.homedir()`.
 
 * `codebraid.preview.pandoc.previewDefaultsFile` [`_codebraid_preview.yaml`]:
-  Special Pandoc defaults file in document directory that is used for preview
-  purposes.  If it exists and defines `input-files`, the preview will
-  automatically work with all files in a multi-file document.  Currently,
-  `input-files`, `from`, and `filters` are the only options that are
-  supported; the full range of Pandoc defaults options is not yet supported.
-  Spaces and some other characters are not currently supported in filter
-  names.
+  Special [Pandoc defaults file](https://pandoc.org/MANUAL.html#defaults-files)
+  in the document directory that is used for preview purposes.
 
-  The preview defaults file is ignored if it defines `input-files` and the
-  current document is not in `input-files`.  If the current document is in
-  `input-files`, or if `input-files` is not defined, then the preview defaults
-  file is used.
+  All Pandoc defaults options are supported with one exception.  If the
+  defaults file includes additional external defaults files by setting
+  `defaults`, then the following options in those additional external defaults
+  files will be ignored:  `input-files`, `input-file`, `from`, `reader`, `to`,
+  `writer`, and `file-scope`.  The preview must know the values of these
+  options to function correctly, and it does not attempt to replicate Pandoc's
+  system for locating and merging multiple defaults files.
+
+  While essentially all defaults options are supported, keep in mind that some
+  options or option values are irrelevant or inappropriate.  The preview is
+  HTML, so avoid options that do not affect HTML, are incompatible with HTML,
+  result in non-HTML output, or redirect the output.
+
+  If the defaults file is modified within VS Code, the preview will
+  automatically detect changes and update.  If the defaults file is modified
+  in another editor, close and restart the preview for changes to be applied.
+
+  If the defaults file exists and it defines `input-files`, then the preview
+  will automatically work with all files in a multi-file document.  If the
+  defaults file defines `input-files` (or `input-file`), then it will only be
+  applied to the specified files; it will be ignored for other files.
+
+  If the defaults file defines `input-files` (or `input-file`), all specified
+  files must be in the same directory with the defaults file.  Document files
+  in subdirectories are not supported.
 
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content `{=format}` in the preview.

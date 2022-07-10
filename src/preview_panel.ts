@@ -266,6 +266,12 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.disposables
 		);
 
+		vscode.workspace.onDidSaveTextDocument(
+			this.onDidSaveTextDocument,
+			this,
+			this.disposables
+		);
+
 		vscode.window.onDidChangeTextEditorVisibleRanges(
 			this.onDidChangeTextEditorVisibleRanges,
 			this,
@@ -432,11 +438,18 @@ ${message}
 		if (event.contentChanges.length !== 0 && event.document.uri.scheme === 'file') {
 			if (this.fileNames.indexOf(event.document.fileName) !== -1) {
 				this.update();
-			} else if (event.document.fileName === this.pandocPreviewDefaults.fileName) {
-				this.pandocPreviewDefaults.update().then(() => {
-					this.update();
-				});
 			}
+		}
+	}
+
+	onDidSaveTextDocument(document: vscode.TextDocument) {
+		if (!this.panel) {
+			return;
+		}
+		if (document.fileName === this.pandocPreviewDefaults.rawFileName) {
+			this.pandocPreviewDefaults.update().then(() => {
+				this.update();
+			});
 		}
 	}
 
@@ -859,10 +872,10 @@ ${message}
 		// Collect all data that depends on config and preview defaults so
 		// that everything from here onward isn't affected by config or
 		// preview changes during await's.
-		let fileNames = this.fileNames;
+		const fileNames = this.fileNames;
 		let fromFormat = this.fromFormat;
-		let filters = this.pandocPreviewDefaults.filters;
-		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
+		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
 		this.sourceSupportsScrollSync = fromFormatIsCommonmark;
@@ -895,14 +908,11 @@ ${message}
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
 		args.push(...normalizedConfigPandocOptions);
-		if (filters) {
-			for (const filter of filters) {
-				if (filter.endsWith('.lua')) {
-					args.push(...['--lua-filter', filter]);
-				} else {
-					args.push(...['--filter', filter]);
-				}
-			}
+		if (fileScope) {
+			args.push('--file-scope');
+		}
+		if (this.pandocPreviewDefaults.processedFileName) {
+			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
 		}
 		args.push(...this.pandocPreviewArgs);
 		if (this.extension.config.pandoc.showRaw) {
@@ -1202,9 +1212,10 @@ ${message}
 		// Collect all data that depends on config and preview defaults so
 		// that everything from here onward isn't affected by config or
 		// preview changes during await's.
-		let fileNames = this.fileNames;
+		const fileNames = this.fileNames;
 		let fromFormat = this.fromFormat;
-		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
+		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
 		if (fromFormatIsCommonmark) {
@@ -1238,10 +1249,14 @@ ${message}
 			args.push('--no-execute');
 		}
 		args.push(...normalizedConfigPandocOptions);
-		// Filters from 'pandocPreviewDefaults.filters' are skipped, because
-		// they are only applied to the document after Codebraid processing.
 		// If Codebraid adds a --pre-filter or similar option, that would need
 		// to be handled here.
+		if (fileScope) {
+			args.push('--file-scope');
+		}
+		if (this.pandocPreviewDefaults.processedFileName) {
+			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
+		}
 		args.push(...this.pandocPreviewArgs);
 		args.push(`--from=${fromFormat}`);
 
@@ -1324,10 +1339,10 @@ ${message}
 		// Collect all data that depends on config and preview defaults so
 		// that everything from here onward isn't affected by config or
 		// preview changes during await's.
-		let fileNames = this.fileNames;
-		let fromFormat = this.fromFormat;
-		let filters = this.pandocPreviewDefaults.filters;
-		let normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
+		const fileNames = this.fileNames;
+		const fromFormat = this.fromFormat;
+		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, undefined);
 		if (!maybeFileTexts) {
@@ -1338,14 +1353,11 @@ ${message}
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
 		args.push(...normalizedConfigPandocOptions);
-		if (filters) {
-			for (const filter of filters) {
-				if (filter.endsWith('.lua')) {
-					args.push(...['--lua-filter', filter]);
-				} else {
-					args.push(...['--filter', filter]);
-				}
-			}
+		if (fileScope) {
+			args.push('--file-scope');
+		}
+		if (this.pandocPreviewDefaults.processedFileName) {
+			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
 		}
 		args.push(...this.pandocExportArgs);
 		if (this.usingCodebraid) {

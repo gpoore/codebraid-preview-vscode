@@ -22,16 +22,18 @@ export default class PandocPreviewDefaults {
 	extension: ExtensionState;
 	cwd: string;
 
-	fileName: string | undefined;
+	rawFileName: string | undefined;
 	asString: string | undefined;
 
 	isValid: boolean;
 	isRelevant: boolean;
 	errorMessage: string | undefined;
-	yaml: {any: any} | undefined;
+	yaml: {[key: string]: any} | undefined;
 	inputFiles: Array<string> | undefined;
 	from: string | undefined;
-	filters: Array<string> | undefined;
+	fileScope: boolean | undefined;
+	to: string | undefined;
+	processedFileName: string | undefined;
 
 	constructor(previewPanel: PreviewPanel) {
 		this.previewPanel = previewPanel;
@@ -40,6 +42,8 @@ export default class PandocPreviewDefaults {
 		this.isValid = false;
 		this.isRelevant = false;
 	}
+
+	extractedKeys: Set<string> = new Set(['input-files', 'input-file', 'from', 'reader', 'to', 'writer', 'file-scope']);
 
 	async update() {
 		let currentPreviewDefaultsFile = this.extension.config.pandoc.previewDefaultsFile;
@@ -58,7 +62,6 @@ export default class PandocPreviewDefaults {
 		this.yaml = undefined;
 		this.inputFiles = undefined;
 		this.from = undefined;
-		this.filters = undefined;
 		if (!currentPreviewDefaultsString || !currentPreviewDefaultsString.trim()) {
 			this.isValid = true;
 			this.previewPanel.fileNames = [this.previewPanel.currentFileName];
@@ -68,7 +71,7 @@ export default class PandocPreviewDefaults {
 		}
 		if (currentPreviewDefaultsString !== this.asString) {
 			try {
-				[this.yaml, this.inputFiles, this.from, this.filters] = this.loadYAML(currentPreviewDefaultsString);
+				[this.yaml, this.inputFiles, this.from, this.fileScope, this.to] = this.loadYAML(currentPreviewDefaultsString);
 			} catch (e) {
 				if (!this.previewPanel.panel) {
 					return;
@@ -77,9 +80,44 @@ export default class PandocPreviewDefaults {
 				this.showErrorMessage();
 				return;
 			}
+			const defaultsFileYaml: {[key: string]: any} = {...this.yaml};
+			let keyCount: number = 0;
+			Object.keys(defaultsFileYaml).forEach((key) => {
+				if (this.extractedKeys.has(key)) {
+					delete defaultsFileYaml[key];
+				} else {
+					keyCount += 1;
+				}
+			});
+			if (keyCount > 0) {
+				const processedDefaultsPath = path.join(this.cwd, '_codebraid', 'defaults', '_codebraid_preview.yaml');
+				const processedDefaultsUri = vscode.Uri.file(processedDefaultsPath);
+				const data = Buffer.from(yaml.dump(defaultsFileYaml), 'utf8');
+				let oldData: Uint8Array | undefined = undefined;
+				if (this.processedFileName === undefined) {
+					try {
+						oldData = await vscode.workspace.fs.readFile(processedDefaultsUri);
+					} catch {
+					}
+				}
+				if (oldData === undefined || data.compare(oldData) !== 0) {
+					try {
+						await new Promise<void>((resolve) => {
+							resolve(vscode.workspace.fs.writeFile(processedDefaultsUri, data));
+						});
+					} catch (error) {
+						this.errorMessage = `Saving defaults file failed:\n${error}`;
+						this.showErrorMessage();
+						return;
+					}
+				}
+				this.processedFileName = processedDefaultsUri.fsPath;
+			} else {
+				this.processedFileName = undefined;
+			}
 			this.asString = currentPreviewDefaultsString;
 		}
-		this.fileName = currentPreviewDefaultsFileName;
+		this.rawFileName = currentPreviewDefaultsFileName;
 		this.isValid = true;
 		if (!this.inputFiles) {
 			this.isRelevant = true;
@@ -110,7 +148,7 @@ export default class PandocPreviewDefaults {
 		}
 	}
 
-	loadYAML(dataString: string) : [{any: any} | undefined,	Array<string> | undefined, string | undefined, Array<string> | undefined] {
+	loadYAML(dataString: string) : [{[key: string]: any}?, Array<string>?, string?, boolean?, string?] {
 		if (dataString.charCodeAt(0) === 0xFEFF) {
 			// Drop BOM
 			dataString = dataString.slice(1);
@@ -125,30 +163,43 @@ export default class PandocPreviewDefaults {
 		if (typeof(maybeData) !== 'object' || maybeData === null || Array.isArray(maybeData)) {
 			throw new Error('Top level of YAML must be an associative array (that is, a map/dict/hash)');
 		}
+		Object.keys(maybeData).forEach((key) => {
+			if (typeof(key) !== 'string') {
+				throw new Error('Top level of YAML must have string keys');
+			}
+		});
+		const data: {[key: string]: any} = maybeData;
 		let maybeInputFiles: any = undefined;
-		if (maybeData.hasOwnProperty('input-files')) {
-			maybeInputFiles = maybeData['input-files'];
-			if (!Array.isArray(maybeInputFiles) || maybeInputFiles.length === 0) {
-				throw new Error('Key "input-files" must map to a list of strings');
-			}
-			for (const x of maybeInputFiles) {
-				if (typeof(x) !== 'string') {
-					throw new Error('Key "input-files" must map to a list of strings');
+		for (const key of ['input-files', 'input-file']) {
+			if (data.hasOwnProperty(key)) {
+				if (maybeInputFiles !== undefined) {
+					throw new Error('Cannot have both keys "input-files" and "input-file"');
 				}
-				if (!/^[^\\\\/]+$/.test(x)) {
-					throw new Error('Key "input-files" must map to a list of file names in the document directory');
+				if (key === 'input-files') {
+					maybeInputFiles = data[key];
+					if (!Array.isArray(maybeInputFiles) || maybeInputFiles.length === 0) {
+						throw new Error('Key "input-files" must map to a list of strings');
+					}
+				} else {
+					maybeInputFiles = [data[key]];
+				}
+				for (const x of maybeInputFiles) {
+					if (typeof(x) !== 'string') {
+						if (key === 'input-files') {
+							throw new Error('Key "input-files" must map to a list of strings');
+						} else {
+							throw new Error('Key "input-file" must map to a string');
+						}
+					}
+					if (!/^[^\\/]+$/.test(x)) {
+						if (key === 'input-files') {
+							throw new Error('Key "input-files" must map to a list of file names in the document directory');
+						} else {
+							throw new Error('Key "input-file" must map to a file name in the document directory');
+						}
+					}
 				}
 			}
-		}
-		let maybeInputFile: any = undefined;
-		if (maybeData.hasOwnProperty('input-file')) {
-			maybeInputFile = maybeData['input-file'];
-			if (typeof(maybeInputFile) !== 'string') {
-				throw new Error('Key "input-file" must map to a string');
-			}
-		}
-		if (maybeInputFile && maybeInputFiles) {
-			throw new Error('Cannot have both keys "input-files" and "input-file"');
 		}
 		let inputFiles: Array<string> | undefined;
 		if (maybeInputFiles) {
@@ -156,36 +207,48 @@ export default class PandocPreviewDefaults {
 			for (const inputFile of maybeInputFiles) {
 				inputFiles.push(vscode.Uri.file(path.join(this.cwd, inputFile)).fsPath);
 			}
-		} else if (maybeInputFile) {
-			inputFiles = [vscode.Uri.file(path.join(this.cwd, maybeInputFile)).fsPath];
 		}
 		let maybeFrom: any = undefined;
-		if (maybeData.hasOwnProperty('from')) {
-			maybeFrom = maybeData['from'];
-			if (typeof(maybeFrom) !== 'string') {
-				throw new Error('Key "from" must map to a string');
-			}
-			if (!/^[a-z_]+(?:[+-][a-z_]+)*$/.test(maybeFrom)) {
-				throw new Error('Key "from" has incorrect value');
-			}
-		}
-		let from: string | undefined = maybeFrom;
-		let maybeFilters: any = undefined;
-		if (maybeData.hasOwnProperty('filters')) {
-			maybeFilters = maybeData['filters'];
-			if (!Array.isArray(maybeFilters) || maybeFilters.length === 0) {
-				throw new Error('Key "filters" must map to an array of strings');
-			}
-			for (const x of maybeFilters) {
-				if (typeof(x) !== 'string' || !x) {
-					throw new Error('Key "filters" must map to an array of strings');
+		for (const key of ['from', 'reader']) {
+			if (data.hasOwnProperty(key)) {
+				if (maybeFrom !== undefined) {
+					throw new Error('Cannot define both keys "from" and "reader"');
 				}
-				if (/[ "';&|~$]/.test(x)) {
-					throw new Error(`Unsupported character in filter name: "${x}"`);
+				maybeFrom = data[key];
+				if (typeof(maybeFrom) !== 'string') {
+					throw new Error(`Key "${key}" must map to a string`);
+				}
+				if (!/^[a-z_]+(?:[+-][a-z_]+)*$/.test(maybeFrom)) {
+					throw new Error(`Key "${key}" has incorrect value (expect <format><extensions>)`);
 				}
 			}
 		}
-		return [maybeData, inputFiles, from, maybeFilters];
+		const from: string | undefined = maybeFrom;
+		let maybeFileScope: any = undefined;
+		if (data.hasOwnProperty('file-scope')) {
+			maybeFileScope = data['file-scope'];
+			if (typeof(maybeFileScope) !== 'boolean') {
+				throw new Error('Key "file-scope" must map to a boolean');
+			}
+		}
+		const fileScope: boolean | undefined = maybeFileScope;
+		let maybeTo: any = undefined;
+		for (const key of ['to', 'writer']) {
+			if (data.hasOwnProperty(key)) {
+				if (maybeTo !== undefined) {
+					throw new Error('Cannot define both keys "to" and "writer"');
+				}
+				maybeTo = data[key];
+				if (typeof(maybeTo) !== 'string') {
+					throw new Error(`Key "${key}" must map to a string`);
+				}
+				if (!/^[a-z_]+(?:[+-][a-z_]+)*$/.test(maybeTo)) {
+					throw new Error(`Key "${key}" has incorrect value (expect <format><extensions>)`);
+				}
+			}
+		}
+		const to: string | undefined = maybeTo;
+		return [data, inputFiles, from, fileScope, to];
 	}
 
 };
