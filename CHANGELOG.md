@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.8.0 (dev)
+## v0.8.0 (2022-07-11)
 
 * `_codebraid_preview.yaml` now supports essentially all
   [Pandoc defaults options](https://pandoc.org/MANUAL.html#defaults-files)
