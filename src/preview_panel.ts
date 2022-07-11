@@ -1335,12 +1335,13 @@ ${message}
 		} else if (codebraidProcessExitStatus > 0 && codebraidProcessExitStatus < 4) {
 			let message: string;
 			if (stderrBuffer.length === 0) {
-				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}`;
-		 	} else {
-				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}:\n${stderrBuffer.join('')}`;
+				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}. No stderr or other information is available.`;
+				this.extension.log(message);
+			} else {
+				message = `Codebraid process failed with exit code ${codebraidProcessExitStatus}. See Output log for details.`;
+				this.extension.log(`Codebraid process failed with exit code ${codebraidProcessExitStatus}:\n${stderrBuffer.join('')}`);
 			}
 			vscode.window.showErrorMessage(message);
-			this.extension.log(message);
 			this.currentCodebraidOutput = this.oldCodebraidOutput;
 		} else {
 			for (const jsonData of stdoutBuffer.join('').split('\n')) {

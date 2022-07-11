@@ -1,6 +1,13 @@
 # Change Log
 
 
+## v0.9.0 (dev)
+
+* When the Codebraid process fails and there is stderr output, the full
+  details are now written to the Output log.
+
+
+
 ## v0.8.0 (2022-07-11)
 
 * `_codebraid_preview.yaml` now supports essentially all
