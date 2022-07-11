@@ -8,138 +8,182 @@
 
 import * as vscode from 'vscode';
 
-import * as path from 'path';
 import * as yaml from 'js-yaml';
 
 import type PreviewPanel from './preview_panel';
 import type {ExtensionState} from './types';
 
 
-
-
-export default class PandocPreviewDefaults {
-	previewPanel: PreviewPanel;
-	extension: ExtensionState;
-	cwd: string;
-
-	rawFileName: string | undefined;
-	asString: string | undefined;
-
-	isValid: boolean;
-	isRelevant: boolean;
-	errorMessage: string | undefined;
+type PandocDefaultsYaml = {
 	yaml: {[key: string]: any} | undefined;
 	inputFiles: Array<string> | undefined;
 	from: string | undefined;
 	fileScope: boolean | undefined;
 	to: string | undefined;
-	processedFileName: string | undefined;
+};
+
+
+export default class PandocPreviewDefaults {
+	previewPanel: PreviewPanel;
+	extension: ExtensionState;
+	cwdUri: vscode.Uri;
+
+	fileName: string | undefined;
+	asString: string | undefined;
+
+	isValid: boolean;
+	errorMessage: string | undefined;
+	lastWrittenDefaultsBytes: Uint8Array | undefined;
+
+	isUpdating: boolean;
 
 	constructor(previewPanel: PreviewPanel) {
 		this.previewPanel = previewPanel;
 		this.extension = previewPanel.extension;
-		this.cwd = previewPanel.cwd;
+		this.cwdUri = vscode.Uri.file(previewPanel.cwd);
 		this.isValid = false;
-		this.isRelevant = false;
+		this.isUpdating = false;
 	}
 
 	extractedKeys: Set<string> = new Set(['input-files', 'input-file', 'from', 'reader', 'to', 'writer', 'file-scope']);
 
 	async update() {
-		let currentPreviewDefaultsFile = this.extension.config.pandoc.previewDefaultsFile;
-		let currentPreviewDefaultsPath = path.join(this.cwd, currentPreviewDefaultsFile);
-		let currentPreviewDefaultsString: string | undefined;
-		let currentPreviewDefaultsFileName: string | undefined;
-		try {
-			let currentPreviewDefaultsDocument = await vscode.workspace.openTextDocument(currentPreviewDefaultsPath);
-			currentPreviewDefaultsFileName = currentPreviewDefaultsDocument.fileName;
-			currentPreviewDefaultsString = currentPreviewDefaultsDocument.getText();
-		} catch {
-		}
-		this.isValid = false;
-		this.isRelevant = false;
-		this.errorMessage = undefined;
-		this.yaml = undefined;
-		this.inputFiles = undefined;
-		this.from = undefined;
-		if (!currentPreviewDefaultsString || !currentPreviewDefaultsString.trim()) {
-			this.isValid = true;
-			this.previewPanel.fileNames = [this.previewPanel.currentFileName];
-			this.previewPanel.previousFileName = undefined;
-			this.previewPanel.fromFormat = this.extension.config.pandoc.fromFormat;
-			return;
-		}
-		if (currentPreviewDefaultsString !== this.asString) {
-			try {
-				[this.yaml, this.inputFiles, this.from, this.fileScope, this.to] = this.loadYAML(currentPreviewDefaultsString);
-			} catch (e) {
-				if (!this.previewPanel.panel) {
-					return;
-				}
-				this.errorMessage = `Failed to process config "${currentPreviewDefaultsPath}":\n${e}`;
-				this.showErrorMessage();
+		while (this.isUpdating) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			if (!this.previewPanel.panel) {
 				return;
 			}
-			const defaultsFileYaml: {[key: string]: any} = {...this.yaml};
-			let keyCount: number = 0;
-			Object.keys(defaultsFileYaml).forEach((key) => {
-				if (this.extractedKeys.has(key)) {
-					delete defaultsFileYaml[key];
-				} else {
-					keyCount += 1;
-				}
-			});
-			if (keyCount > 0) {
-				const processedDefaultsPath = path.join(this.cwd, '_codebraid', 'defaults', '_codebraid_preview.yaml');
-				const processedDefaultsUri = vscode.Uri.file(processedDefaultsPath);
-				const data = Buffer.from(yaml.dump(defaultsFileYaml), 'utf8');
-				let oldData: Uint8Array | undefined = undefined;
-				if (this.processedFileName === undefined) {
-					try {
-						oldData = await vscode.workspace.fs.readFile(processedDefaultsUri);
-					} catch {
-					}
-				}
-				if (oldData === undefined || data.compare(oldData) !== 0) {
-					try {
-						await new Promise<void>((resolve) => {
-							resolve(vscode.workspace.fs.writeFile(processedDefaultsUri, data));
-						});
-					} catch (error) {
-						this.errorMessage = `Saving defaults file failed:\n${error}`;
-						this.showErrorMessage();
-						return;
-					}
-				}
-				this.processedFileName = processedDefaultsUri.fsPath;
-			} else {
-				this.processedFileName = undefined;
-			}
-			this.asString = currentPreviewDefaultsString;
 		}
-		this.rawFileName = currentPreviewDefaultsFileName;
+		this.isUpdating = true;
+
+		let pandocDefaultsYaml: PandocDefaultsYaml | undefined;
+		const defaultsUri = vscode.Uri.joinPath(this.cwdUri, this.extension.config.pandoc.previewDefaultsFile);
+		this.fileName = defaultsUri.fsPath;
+		let defaultsBytes: Uint8Array | undefined;
+		let defaultsString: string | undefined;
+
+		try {
+			defaultsBytes = await vscode.workspace.fs.readFile(defaultsUri);
+		} catch {
+		}
+		if (!this.previewPanel.panel) {
+			this.isUpdating = false;
+			return;
+		}
+		if (!defaultsBytes) {
+			this.isValid = true;
+			this.errorMessage = undefined;
+			this.asString = undefined;
+			this.previewPanel.onPandocPreviewDefaultsInvalidNotRelevant();
+			this.isUpdating = false;
+			return;
+		}
+
+		try {
+			defaultsString = Buffer.from(defaultsBytes).toString('utf8');
+		} catch (error) {
+			this.isValid = false;
+			this.errorMessage = `Failed to decode defaults file "${this.extension.config.pandoc.previewDefaultsFile}":\n${error}`;
+			this.showErrorMessage();
+			this.asString = undefined;
+			this.previewPanel.onPandocPreviewDefaultsInvalidNotRelevant();
+			this.isUpdating = false;
+			return;
+		}
+		if (defaultsString === this.asString) {
+			this.isUpdating = false;
+			return;
+		}
+
+		try {
+			pandocDefaultsYaml = this.loadPandocDefaultsYaml(defaultsString);
+		} catch (error) {
+			this.isValid = false;
+			this.errorMessage = `Failed to load defaults file "${this.fileName}":\n${error}`;
+			this.showErrorMessage();
+			this.asString = undefined;
+			this.previewPanel.onPandocPreviewDefaultsInvalidNotRelevant();
+			this.isUpdating = false;
+			return;
+		}
+		const processedDefaultsData: {[key: string]: any} = {...pandocDefaultsYaml.yaml};
+		let keyCount: number = 0;
+		Object.keys(processedDefaultsData).forEach((key) => {
+			if (this.extractedKeys.has(key)) {
+				delete processedDefaultsData[key];
+			} else {
+				keyCount += 1;
+			}
+		});
+		let processedDefaultsFileName: string | undefined;
+		if (keyCount > 0) {
+			const processedDefaultsUri = vscode.Uri.joinPath(this.cwdUri, '_codebraid', 'defaults', '_codebraid_preview.yaml');
+			processedDefaultsFileName = processedDefaultsUri.fsPath;
+			const dataBytes = Buffer.from(yaml.dump(processedDefaultsData), 'utf8');
+			let oldDataBytes: Uint8Array | undefined;
+			if (this.lastWrittenDefaultsBytes === undefined) {
+				try {
+					oldDataBytes = await vscode.workspace.fs.readFile(processedDefaultsUri);
+				} catch {
+				}
+				if (!this.previewPanel.panel) {
+					this.isUpdating = false;
+					return;
+				}
+			} else {
+				oldDataBytes = this.lastWrittenDefaultsBytes;
+			}
+			if (oldDataBytes === undefined || dataBytes.compare(oldDataBytes) !== 0) {
+				try {
+					await Promise.resolve(vscode.workspace.fs.writeFile(processedDefaultsUri, dataBytes));
+				} catch (error) {
+					this.isValid = false;
+					this.errorMessage = `Saving temp defaults file failed:\n${error}`;
+					this.showErrorMessage();
+					this.asString = undefined;
+					this.previewPanel.onPandocPreviewDefaultsInvalidNotRelevant();
+					this.isUpdating = false;
+					return;
+				}
+				if (!this.previewPanel.panel) {
+					this.isUpdating = false;
+					return;
+				}
+			}
+			this.lastWrittenDefaultsBytes = dataBytes;
+		}
 		this.isValid = true;
-		if (!this.inputFiles) {
-			this.isRelevant = true;
+		this.errorMessage = undefined;
+		this.asString = defaultsString;
+		let isRelevant: boolean = false;
+		if (!pandocDefaultsYaml.inputFiles) {
+			isRelevant = true;
 			this.previewPanel.fileNames = [this.previewPanel.currentFileName];
 			this.previewPanel.previousFileName = undefined;
-		} else if (this.inputFiles.indexOf(this.previewPanel.currentFileName) !== -1) {
-			this.isRelevant = true;
-			this.previewPanel.fileNames = this.inputFiles;
+		} else if (pandocDefaultsYaml.inputFiles.indexOf(this.previewPanel.currentFileName) !== -1) {
+			isRelevant = true;
+			this.previewPanel.fileNames = pandocDefaultsYaml.inputFiles;
 			if (this.previewPanel.previousFileName) {
 				if (this.previewPanel.fileNames.indexOf(this.previewPanel.previousFileName) === -1) {
 					this.previewPanel.previousFileName = undefined;
 				}
 			}
-		} else {
-			this.previewPanel.fileNames = [this.previewPanel.currentFileName];
-			this.previewPanel.previousFileName = undefined;
 		}
-		if (this.isRelevant && this.from) {
-			this.previewPanel.fromFormat = this.from;
+		if (isRelevant) {
+			this.previewPanel.defaultsFileName = processedDefaultsFileName;
+			if (pandocDefaultsYaml.from !== undefined) {
+				this.previewPanel.fromFormat = pandocDefaultsYaml.from;
+			}
+			if (pandocDefaultsYaml.fileScope !== undefined) {
+				this.previewPanel.fileScope = pandocDefaultsYaml.fileScope;
+			}
+			if (pandocDefaultsYaml.to !== undefined) {
+				this.previewPanel.toFormat = pandocDefaultsYaml.to;
+			}
 		} else {
-			this.previewPanel.fromFormat = this.extension.config.pandoc.fromFormat;
+			this.previewPanel.onPandocPreviewDefaultsInvalidNotRelevant();
 		}
+		this.isUpdating = false;
 	}
 
 	showErrorMessage() {
@@ -148,7 +192,7 @@ export default class PandocPreviewDefaults {
 		}
 	}
 
-	loadYAML(dataString: string) : [{[key: string]: any}?, Array<string>?, string?, boolean?, string?] {
+	loadPandocDefaultsYaml(dataString: string) : PandocDefaultsYaml {
 		if (dataString.charCodeAt(0) === 0xFEFF) {
 			// Drop BOM
 			dataString = dataString.slice(1);
@@ -205,7 +249,7 @@ export default class PandocPreviewDefaults {
 		if (maybeInputFiles) {
 			inputFiles = [];
 			for (const inputFile of maybeInputFiles) {
-				inputFiles.push(vscode.Uri.file(path.join(this.cwd, inputFile)).fsPath);
+				inputFiles.push(vscode.Uri.joinPath(this.cwdUri, inputFile).fsPath);
 			}
 		}
 		let maybeFrom: any = undefined;
@@ -248,7 +292,13 @@ export default class PandocPreviewDefaults {
 			}
 		}
 		const to: string | undefined = maybeTo;
-		return [data, inputFiles, from, fileScope, to];
+		return {
+			yaml: data,
+			inputFiles: inputFiles,
+			from: from,
+			fileScope: fileScope,
+			to: to
+		};
 	}
 
 };

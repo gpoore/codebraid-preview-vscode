@@ -64,14 +64,20 @@ export default class PreviewPanel implements vscode.Disposable {
 	// single file to be included multiple times.
 	fileNames: Array<string>;
 	uriCache: Map<string, vscode.Uri>;
-	fromFormat: string;
-	pandocPreviewDefaults: PandocPreviewDefaults;
 	// Track visible editor that is relevant.
 	visibleEditor: vscode.TextEditor | undefined;
 	// Track recent visible files to determine which visible editor to sync
 	// with.  It may be worth tracking `viewColumn` as well eventually.
 	currentFileName: string;
 	previousFileName: string | undefined;
+
+	// Pandoc
+	// ------
+	fromFormat: string;
+	fileScope: boolean;
+	toFormat: string;
+	pandocPreviewDefaults: PandocPreviewDefaults;
+	defaultsFileName: string | undefined;
 
 	// Display
 	// -------
@@ -121,13 +127,15 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.extension = extension;
 
 		this.cwd = path.dirname(editor.document.uri.fsPath);
-		this.fileNames = [];
-		this.fileNames.push(editor.document.fileName);
+		this.fileNames = [editor.document.fileName];
 		this.uriCache = new Map();
-		this.fromFormat = extension.config.pandoc.fromFormat;
-		this.pandocPreviewDefaults = new PandocPreviewDefaults(this);
 		this.visibleEditor = editor;
 		this.currentFileName = editor.document.fileName;
+		this.fromFormat = extension.config.pandoc.fromFormat;
+		this.fileScope = false;
+		this.toFormat = 'html';
+		this.pandocPreviewDefaults = new PandocPreviewDefaults(this);
+
 		vscode.window.onDidChangeActiveTextEditor(
 			this.onDidChangeActiveTextEditor,
 			this,
@@ -221,7 +229,6 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--css=${this.resourceWebviewUris.vscodeCodicon}`,
 			`--css=${this.resourceWebviewUris.codebraidCss}`,
 			`--katex=${this.resourceWebviewUris.katex}/`,
-			`--to=html`,
 		];
 		this.pandocShowRawArgs = [
 			`--lua-filter="${this.resourcePaths.pandocShowRawFilter}"`,
@@ -307,6 +314,15 @@ export default class PreviewPanel implements vscode.Disposable {
 			this._onDisposeExtensionCallback();
 			this._onDisposeExtensionCallback = undefined;
 		}
+	}
+
+	onPandocPreviewDefaultsInvalidNotRelevant() {
+		this.fileNames = [this.currentFileName];
+		this.previousFileName = undefined;
+		this.fromFormat = this.extension.config.pandoc.fromFormat;
+		this.fileScope = false;
+		this.toFormat = 'html';
+		this.defaultsFileName = undefined;
 	}
 
 	formatMessage(title: string, message: string) {
@@ -446,7 +462,7 @@ ${message}
 		if (!this.panel) {
 			return;
 		}
-		if (document.fileName === this.pandocPreviewDefaults.rawFileName) {
+		if (document.fileName === this.pandocPreviewDefaults.fileName) {
 			this.pandocPreviewDefaults.update().then(() => {
 				this.update();
 			});
@@ -874,7 +890,9 @@ ${message}
 		// preview changes during await's.
 		const fileNames = this.fileNames;
 		let fromFormat = this.fromFormat;
-		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const fileScope = this.fileScope;
+		const toFormat = this.toFormat;
+		const defaultsFileName = this.defaultsFileName;
 		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
@@ -907,13 +925,10 @@ ${message}
 
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
+		if (defaultsFileName) {
+			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		}
 		args.push(...normalizedConfigPandocOptions);
-		if (fileScope) {
-			args.push('--file-scope');
-		}
-		if (this.pandocPreviewDefaults.processedFileName) {
-			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
-		}
 		args.push(...this.pandocPreviewArgs);
 		if (this.extension.config.pandoc.showRaw) {
 			args.push(...this.pandocShowRawArgs);
@@ -921,7 +936,11 @@ ${message}
 		if (this.usingCodebraid) {
 			args.push(...this.pandocWithCodebraidOutputArgs);
 		}
+		if (fileScope) {
+			args.push('--file-scope');
+		}
 		args.push(`--from=${fromFormat}`);
+		args.push(`--to=${toFormat}`);
 
 		let buildProcess = child_process.execFile(
 			executable,
@@ -1214,7 +1233,9 @@ ${message}
 		// preview changes during await's.
 		const fileNames = this.fileNames;
 		let fromFormat = this.fromFormat;
-		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const fileScope = this.fileScope;
+		const toFormat = this.toFormat;
+		const defaultsFileName = this.defaultsFileName;
 		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
@@ -1248,17 +1269,18 @@ ${message}
 		if (noExecute) {
 			args.push('--no-execute');
 		}
+		if (defaultsFileName) {
+			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		}
 		args.push(...normalizedConfigPandocOptions);
 		// If Codebraid adds a --pre-filter or similar option, that would need
 		// to be handled here.
+		args.push(...this.pandocPreviewArgs);
 		if (fileScope) {
 			args.push('--file-scope');
 		}
-		if (this.pandocPreviewDefaults.processedFileName) {
-			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
-		}
-		args.push(...this.pandocPreviewArgs);
 		args.push(`--from=${fromFormat}`);
+		args.push(`--to=${toFormat}`);
 
 		this.oldCodebraidOutput = this.currentCodebraidOutput;
 		this.currentCodebraidOutput = new Map();
@@ -1341,7 +1363,8 @@ ${message}
 		// preview changes during await's.
 		const fileNames = this.fileNames;
 		const fromFormat = this.fromFormat;
-		const fileScope = this.pandocPreviewDefaults.fileScope;
+		const fileScope = this.fileScope;
+		const defaultsFileName = this.defaultsFileName;
 		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
 
 		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, undefined);
@@ -1352,16 +1375,16 @@ ${message}
 
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
+		if (defaultsFileName) {
+			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		}
 		args.push(...normalizedConfigPandocOptions);
-		if (fileScope) {
-			args.push('--file-scope');
-		}
-		if (this.pandocPreviewDefaults.processedFileName) {
-			args.push(...['--defaults', `"${this.pandocPreviewDefaults.processedFileName}"`]);
-		}
 		args.push(...this.pandocExportArgs);
 		if (this.usingCodebraid) {
 			args.push(...this.pandocWithCodebraidOutputArgs);
+		}
+		if (fileScope) {
+			args.push('--file-scope');
 		}
 		args.push(`--from=${fromFormat}`);
 		// Save dialog requires confirmation of overwrite
