@@ -408,11 +408,12 @@ function updateStatusBarItems() {
 	if (vscode.window.visibleTextEditors.length === 0) {
 		showOpenPreviewStatusBarItem = false;
 	} else {
-		let visibleEditorsCount = vscode.window.visibleTextEditors.length;
+		let visibleEditorsCount = 0;
 		let previewEditorsCount = 0;
 		for (const visibleEditor of vscode.window.visibleTextEditors) {
 			const document = visibleEditor.document;
 			if (document.uri.scheme === 'file' && fileExtensionIsSupported(document.fileName)) {
+				visibleEditorsCount += 1;
 				for (const preview of previews) {
 					if (preview.panel && preview.fileNames.indexOf(document.fileName) !== -1) {
 						previewEditorsCount += 1;

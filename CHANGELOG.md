@@ -9,6 +9,11 @@
   Previously, only `input-files`, `input-file`, `from`, and `filters` were
   supported.
 
+* The "Codebraid Preview" button in the status bar now only appears when a
+  Markdown document is open and visible, and does not yet have a preview.
+  Previously, after the extension loaded, the button was visible for
+  non-Markdown files and was also visible if the info panel was open.
+
 * Fixed a bug that prevented YAML metadata from working with Codebraid.
 
 * Fixed a bug that prevented identification of inherited languages (for
