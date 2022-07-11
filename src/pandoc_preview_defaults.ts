@@ -117,7 +117,7 @@ export default class PandocPreviewDefaults {
 		});
 		let processedDefaultsFileName: string | undefined;
 		if (keyCount > 0) {
-			const processedDefaultsUri = vscode.Uri.joinPath(this.cwdUri, '_codebraid', 'defaults', '_codebraid_preview.yaml');
+			const processedDefaultsUri = vscode.Uri.joinPath(this.cwdUri, '_codebraid', 'temp_defaults', '_codebraid_preview.yaml');
 			processedDefaultsFileName = processedDefaultsUri.fsPath;
 			const dataBytes = Buffer.from(yaml.dump(processedDefaultsData), 'utf8');
 			let oldDataBytes: Uint8Array | undefined;
