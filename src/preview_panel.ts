@@ -193,9 +193,10 @@ export default class PreviewPanel implements vscode.Disposable {
 			),
 		};
 		this.resourcePaths = {
-			pandocSourcePosLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-sync.lua'),
+			pandocSourcePosPreprocFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-preproc.lua'),
+			pandocSourcePosSyncFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-sync.lua'),
 			pandocShowRawFilter: this.extension.context.asAbsolutePath('scripts/pandoc-raw.lua'),
-			pandocCodebraidOutputLuaFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
+			pandocCodebraidOutputFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
 		this.contentSecurityOptions = new Map([
@@ -224,7 +225,7 @@ export default class PreviewPanel implements vscode.Disposable {
 
 		this.pandocPreviewArgs = [
 			`--standalone`,
-			`--lua-filter="${this.resourcePaths.pandocSourcePosLuaFilter}"`,
+			`--lua-filter="${this.resourcePaths.pandocSourcePosSyncFilter}"`,
 			`--css=${this.resourceWebviewUris.vscodeCss}`,
 			`--css=${this.resourceWebviewUris.vscodeCodicon}`,
 			`--css=${this.resourceWebviewUris.codebraidCss}`,
@@ -234,7 +235,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--lua-filter="${this.resourcePaths.pandocShowRawFilter}"`,
 		];
 		this.pandocWithCodebraidOutputArgs = [
-			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputLuaFilter}"`,
+			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputFilter}"`,
 		];
 		this.pandocExportArgs = [
 			'--standalone',
@@ -925,6 +926,9 @@ ${message}
 
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
+		if (fromFormatIsCommonmark && (defaultsFileName || normalizedConfigPandocOptions.length > 0)) {
+			args.push(...['--lua-filter', `"${this.resourcePaths.pandocSourcePosPreprocFilter}"`]);
+		}
 		if (defaultsFileName) {
 			args.push(...['--defaults', `"${defaultsFileName}"`]);
 		}

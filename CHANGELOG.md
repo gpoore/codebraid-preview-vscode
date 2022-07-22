@@ -3,6 +3,13 @@
 
 ## v0.9.0 (dev)
 
+* The preview Pandoc AST is now preprocessed before any user filters are
+  applied.  Adjacent `Str` nodes that are wrapped in `data-pos` spans as a
+  result of the `sourcepos` extension are now merged.  `sourcepos` splits text
+  that normally would have been in a single `Str` node into multiple `Str`
+  nodes, and then wraps each in a `data-pos` span.  The preprocessing makes
+  user filters behave as closely as possible to the non-`sourcepos` case (#9).
+
 * When the Codebraid process fails and there is stderr output, the full
   details are now written to the Output log.
 

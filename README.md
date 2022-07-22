@@ -152,6 +152,18 @@ For code execution, install the latest version of
   representation of non-HTML raw content `{=format}` in the preview.
 
 
+## A note on filters
+
+Scroll sync is provided for CommonMark-based formats using Pandoc's
+`sourcepos` extension.  This inserts `Div` and `Span` nodes into the Pandoc
+AST that contain information about source file origin location in a `data-pos`
+attribute.  If you use filters with your documents and want to make sure that
+the preview is accurate while retaining scroll sync capabilities, make sure
+that your filter skips these nodes and only removes them if empty.  For
+example, in a Lua filter these nodes can be detected by checking
+`node.attributes['data-pos'] ~= nil`.
+
+
 ## Codebraid configuration
 
 When Codebraid is used to run code, the `codebraid` executable is found by
