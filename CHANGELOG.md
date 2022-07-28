@@ -10,6 +10,9 @@
   nodes, and then wraps each in a `data-pos` span.  The preprocessing makes
   user filters behave as closely as possible to the non-`sourcepos` case (#9).
 
+* Added details about `commonmark_x`, including LaTeX macro expansion, to
+  README (#10).
+
 * When the Codebraid process fails and there is stderr output, the full
   details are now written to the Output log.
 

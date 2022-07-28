@@ -28,9 +28,11 @@ currently available.  The preview always remains live.
 
 * **Full bidirectional scroll sync.**  This requires processing the document
   as `commonmark_x`, which is [CommonMark](https://commonmark.org/) plus
-  [Pandoc extensions](https://github.com/jgm/pandoc/wiki/Roadmap).
-  `commonmark_x` has most of the features in Pandoc's Markdown and continues
-  to gain new features.
+  [Pandoc extensions](https://github.com/jgm/pandoc/wiki/Roadmap#pandocs-markdown-transition-to-commonmark).
+  `commonmark_x` has
+  [most of the features](https://github.com/jgm/pandoc/wiki/Roadmap#pandocs-markdown-transition-to-commonmark)
+  in Pandoc's Markdown and continues to gain new features.  See the note about
+  `commonmark_x` below for more details.
 
 * **Math support with [KaTeX](https://katex.org/).**  Surround LaTeX math with
   single dollar signs `$` for inline math or double dollar signs `$$` for
@@ -92,12 +94,85 @@ currently available.  The preview always remains live.
 
 ## Requirements
 
-Install [Pandoc](https://pandoc.org/).  Version 2.17.1.1 or later is strongly
-recommended.  Earlier versions may work but will have reduced functionality,
+Install [Pandoc](https://pandoc.org/).  The latest version is recommended.
+Versions before 2.17.1.1 may work but will have reduced functionality,
 including scroll sync issues with YAML metadata.
 
 For code execution, install the latest version of
 [Codebraid](https://github.com/gpoore/codebraid/).
+
+
+## A note on input formats and `commonmark_x`
+
+By default, documents are treated as Pandoc's `commonmark_x` format, which is
+different from Pandoc's default `markdown` format.  Scroll sync is only
+possible with Pandoc's CommonMark-based formats, and `commonmark_x` is the
+most powerful of these.
+
+The [Pandoc Roadmap](https://github.com/jgm/pandoc/wiki/Roadmap#pandocs-markdown-transition-to-commonmark)
+provides details about `commonmark_x` features.  `commonmark_x` currently
+lacks some `markdown` features that are summarized below.  If you need these
+features, you can switch the input format to `markdown` by modifying the
+extension setting `codebraid.preview.pandoc.fromFormat`.  Or you can create a
+defaults file `_codebraid_preview.yaml` in the document directory and set
+`from: markdown` in it.  Keep in mind that switching to `markdown` will
+disable scroll sync.
+
+Summary of some key features not present in `commonmark_x` compared to
+`markdown`:
+
+* **Citations**:  Not currently supported, but planned.
+
+* **Tables**:  Grid tables, multiline tables, simple tables, and table
+  captions are not supported but planned.  Pipe tables are supported.
+
+* **LaTeX math**:  Only `$` and `$$` are supported as delimiters.  Variations
+  on `\(...\)` and `\[...\]` are not supported.
+
+* **Raw LaTeX**:  LaTeX cannot just be mixed with Markdown text.  Instead, raw
+  attributes must be used.  So instead of `text \command text` use something
+  like ``text `\command`{=tex} text``.
+
+* **LaTeX macros**:  User-defined LaTeX macros are not expanded by Pandoc
+  itself before document conversion (the `latex_macros` extension is not
+  supported), so the output format must handle macro expansion.  This is
+  primarily important for non-LaTeX formats.
+
+  In a document using LaTeX math but targeting a non-LaTeX format like HTML,
+  this can mean that macro definitions belong in a LaTeX math block and must
+  be made global.  For example, the `markdown` document
+  ```
+  \newcommand{\tuple}[1]{\langle #1\rangle}
+
+  $\tuple{a, b, c}$
+  ```
+  might become the `commonmark_x` document
+  ```
+  $$
+  \newcommand{\tuple}[1]{\langle #1\rangle}
+  \global\let\tuple\tuple
+  $$
+
+  $\tuple{a, b, c}$
+  ```
+  The exact details of macro definition processing will depend somewhat on how
+  LaTeX math is rendered and on the configuration of the renderer.
+
+
+
+
+
+
+## A note on filters
+
+Scroll sync is provided for CommonMark-based formats using Pandoc's
+`sourcepos` extension.  This inserts `Div` and `Span` nodes into the Pandoc
+AST that contain information about source file origin location in a `data-pos`
+attribute.  If you use filters with your documents and want to make sure that
+the preview is accurate while retaining scroll sync capabilities, make sure
+that your filter skips these nodes and only removes them if empty.  For
+example, in a Lua filter these nodes can be detected by checking
+`node.attributes['data-pos'] ~= nil`.
 
 
 ## Extension settings
@@ -150,18 +225,6 @@ For code execution, install the latest version of
 
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content `{=format}` in the preview.
-
-
-## A note on filters
-
-Scroll sync is provided for CommonMark-based formats using Pandoc's
-`sourcepos` extension.  This inserts `Div` and `Span` nodes into the Pandoc
-AST that contain information about source file origin location in a `data-pos`
-attribute.  If you use filters with your documents and want to make sure that
-the preview is accurate while retaining scroll sync capabilities, make sure
-that your filter skips these nodes and only removes them if empty.  For
-example, in a Lua filter these nodes can be detected by checking
-`node.attributes['data-pos'] ~= nil`.
 
 
 ## Codebraid configuration
