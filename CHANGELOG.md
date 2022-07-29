@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.9.0 (dev)
+## v0.9.0 (2022-07-29)
 
 * The preview Pandoc AST is now preprocessed before any user filters are
   applied.  Adjacent `Str` nodes that are wrapped in `data-pos` spans as a
