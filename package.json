@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.9.0",
+  "version": "0.10.0-dev1",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -75,6 +75,16 @@
           "type": "boolean",
           "default": true,
           "description": "Scroll editor to sync with preview"
+        },
+        "codebraid.preview.css.useDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the preview's default CSS is used"
+        },
+        "codebraid.preview.css.overrideDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether document CSS overrides the preview's default CSS (determines which is loaded last)"
         },
         "codebraid.preview.pandoc.fromFormat": {
           "type": "string",

@@ -177,6 +177,12 @@ example, in a Lua filter these nodes can be detected by checking
 
 ## Extension settings
 
+* `codebraid.preview.css.overrideDefault` [`true`]:  Whether document CSS
+  overrides the preview's default CSS (determines which is loaded last).
+
+* `codebraid.preview.css.useDefault` [`true`]:  Whether the preview's default
+  CSS is used.
+
 * `codebraid.preview.minBuildInterval` [`1000`]:  Minimum interval between
   document builds in milliseconds.  Builds only occur when there are changes.
 

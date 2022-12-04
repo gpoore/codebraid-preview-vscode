@@ -1,6 +1,19 @@
 # Change Log
 
 
+
+## v0.10.0 (dev)
+
+* Added new settings `codebraid.preview.css.useDefault` and
+  `codebraid.preview.css.overrideDefault` for controlling whether the default
+  preview CSS is loaded and whether it is overridden by document CSS.
+  Document CSS now has precedence by default (#14).
+
+* A Codebraid Preview defaults file now has precedence over the extension's
+  Pandoc settings.
+
+
+
 ## v0.9.0 (2022-07-29)
 
 * The preview Pandoc AST is now preprocessed before any user filters are

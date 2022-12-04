@@ -99,6 +99,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Subprocess
 	// ----------
 	pandocPreviewArgs: Array<string>;
+	pandocCssArgs: Array<string>;
 	pandocShowRawArgs: Array<string>;
 	pandocWithCodebraidOutputArgs: Array<string>;
 	pandocExportArgs: Array<string>;
@@ -226,10 +227,12 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.pandocPreviewArgs = [
 			`--standalone`,
 			`--lua-filter="${this.resourcePaths.pandocSourcePosSyncFilter}"`,
+			`--katex=${this.resourceWebviewUris.katex}/`,
+		];
+		this.pandocCssArgs = [
 			`--css=${this.resourceWebviewUris.vscodeCss}`,
 			`--css=${this.resourceWebviewUris.vscodeCodicon}`,
 			`--css=${this.resourceWebviewUris.codebraidCss}`,
-			`--katex=${this.resourceWebviewUris.katex}/`,
 		];
 		this.pandocShowRawArgs = [
 			`--lua-filter="${this.resourcePaths.pandocShowRawFilter}"`,
@@ -929,10 +932,16 @@ ${message}
 		if (fromFormatIsCommonmark && (defaultsFileName || normalizedConfigPandocOptions.length > 0)) {
 			args.push(...['--lua-filter', `"${this.resourcePaths.pandocSourcePosPreprocFilter}"`]);
 		}
+		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
+			args.push(...this.pandocCssArgs);
+		}
+		args.push(...normalizedConfigPandocOptions);
 		if (defaultsFileName) {
 			args.push(...['--defaults', `"${defaultsFileName}"`]);
 		}
-		args.push(...normalizedConfigPandocOptions);
+		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
+			args.push(...this.pandocCssArgs);
+		}
 		args.push(...this.pandocPreviewArgs);
 		if (this.extension.config.pandoc.showRaw) {
 			args.push(...this.pandocShowRawArgs);
@@ -1273,10 +1282,16 @@ ${message}
 		if (noExecute) {
 			args.push('--no-execute');
 		}
+		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
+			args.push(...this.pandocCssArgs);
+		}
+		args.push(...normalizedConfigPandocOptions);
 		if (defaultsFileName) {
 			args.push(...['--defaults', `"${defaultsFileName}"`]);
 		}
-		args.push(...normalizedConfigPandocOptions);
+		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
+			args.push(...this.pandocCssArgs);
+		}
 		// If Codebraid adds a --pre-filter or similar option, that would need
 		// to be handled here.
 		args.push(...this.pandocPreviewArgs);
