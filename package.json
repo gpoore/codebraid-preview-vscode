@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.10.0-dev1",
+  "version": "0.10.0",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -121,7 +121,7 @@
     "@types/js-yaml": "^4.0.5",
     "@vscode/codicons": "^0.0.31",
     "js-yaml": "^4.1.0",
-    "katex": "^0.16.0"
+    "katex": "^0.16.3"
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

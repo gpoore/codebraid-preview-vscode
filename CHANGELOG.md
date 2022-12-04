@@ -2,7 +2,7 @@
 
 
 
-## v0.10.0 (dev)
+## v0.10.0 (2022-12-04)
 
 * Added new settings `codebraid.preview.css.useDefault` and
   `codebraid.preview.css.overrideDefault` for controlling whether the default
@@ -12,6 +12,7 @@
 * A Codebraid Preview defaults file now has precedence over the extension's
   Pandoc settings.
 
+* Updated KaTeX to v0.16.3.
 
 
 ## v0.9.0 (2022-07-29)
