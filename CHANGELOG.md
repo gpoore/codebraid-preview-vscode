@@ -1,6 +1,17 @@
 # Change Log
 
 
+## v0.11.0 (dev)
+
+* Added new setting `codebraid.preview.security.extraLocalResourceRoots`.
+  This allows the preview panel to load resources such as images from
+  locations other than the document directory and the workspace folders (#15).
+
+* The preview panel now has access to local resources in the workspace
+  folders, not just access to resources in the document directory.
+
+* The webview Content Security Policy now includes `media-src`.
+
 
 ## v0.10.0 (2022-12-04)
 

@@ -23,6 +23,7 @@ const isWindows = process.platform === 'win32';
 let context: vscode.ExtensionContext;
 const previews: Set<PreviewPanel> = new Set();
 let extensionState: ExtensionState;
+const oldExtraLocalResourceRoots: Set<string> = new Set();
 let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
 
 
@@ -90,6 +91,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		context: context,
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),
+		normalizedExtraLocalResourceRoots: normalizeExtraLocalResourceRoots(config),
 		log: log,
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
@@ -141,12 +143,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		() => {
 			extensionState.config = vscode.workspace.getConfiguration('codebraid.preview');
 			extensionState.normalizedConfigPandocOptions = normalizePandocOptions(extensionState.config);
+			extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
 			for (const preview of previews) {
 				if (preview.panel) {
 					preview.pandocPreviewDefaults.update().then(() => {
 						preview.update();
 					});
 				}
+			}
+		},
+		null,
+		context.subscriptions
+	);
+	vscode.workspace.onDidChangeWorkspaceFolders(
+		() => {
+			if (previews.size > 0) {
+				vscode.window.showInformationMessage([
+					'Workspace folder(s) have changed.',
+					'This will not affect preview panels until they are closed and reopened.',
+				].join(' '));
 			}
 		},
 		null,
@@ -209,6 +224,40 @@ function normalizePandocOptions(config: vscode.WorkspaceConfiguration) : Array<s
 		normalizedOptions.push(`${opt}${sep}${val}`);
 	}
 	return normalizedOptions;
+}
+
+
+function normalizeExtraLocalResourceRoots(config: vscode.WorkspaceConfiguration): Array<string> {
+	if (previews.size > 0) {
+		let didChangeExtraRoots: boolean = false;
+		if (oldExtraLocalResourceRoots.size !== config.security.extraLocalResourceRoots.length) {
+			didChangeExtraRoots = true;
+		} else {
+			for (const root of config.security.extraLocalResourceRoots) {
+				if (!oldExtraLocalResourceRoots.has(root)) {
+					didChangeExtraRoots = true;
+					break;
+				}
+			}
+		}
+		if (didChangeExtraRoots) {
+			vscode.window.showInformationMessage([
+				'Extension setting "security.extraLocalResourceRoots" has changed.',
+				'This will not affect preview panels until they are closed and reopened.',
+			].join(' '));
+		}
+	}
+	oldExtraLocalResourceRoots.clear();
+	const extraRoots: Array<string> = [];
+	for (const root of config.security.extraLocalResourceRoots) {
+		oldExtraLocalResourceRoots.add(root);
+		if (root.startsWith('~/') || root.startsWith('~\\')) {
+			extraRoots.push(`${homedir}${root.slice(1)}`);
+		} else {
+			extraRoots.push(root);
+		}
+	}
+	return extraRoots;
 }
 
 

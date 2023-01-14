@@ -232,6 +232,16 @@ example, in a Lua filter these nodes can be detected by checking
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content `{=format}` in the preview.
 
+* `codebraid.preview.security.extraLocalResourceRoots` [none]:  Additional
+   root paths from which the preview can load local (filesystem) resources,
+   such as images.  These are in addition to the current workspace folders and
+   the document directory.
+
+   Paths may be absolute or relative.  In absolute paths, a leading `~/` is
+   expanded to the user's home directory.  Relative paths are relative to the
+   document file; for example, `../images` refers to an `images` directory one
+   level up from the document.
+
 
 ## Codebraid configuration
 

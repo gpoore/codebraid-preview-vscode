@@ -148,6 +148,25 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.disposables
 		);
 
+		const localResourceRoots: Array<vscode.Uri> = [
+			vscode.Uri.file(this.cwd),
+			vscode.Uri.file(this.extension.context.asAbsolutePath('media')),
+			vscode.Uri.file(this.extension.context.asAbsolutePath('scripts')),
+			vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist')),
+			vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist')),
+		];
+		if (vscode.workspace.workspaceFolders) {
+			for (const folder of vscode.workspace.workspaceFolders) {
+				localResourceRoots.push(folder.uri);
+			}
+		}
+		for (const root of extension.normalizedExtraLocalResourceRoots) {
+			if (path.isAbsolute(root)) {
+				localResourceRoots.push(vscode.Uri.file(root));
+			} else {
+				localResourceRoots.push(vscode.Uri.file(path.join(this.cwd, root)));
+			}
+		}
 		this.panel = vscode.window.createWebviewPanel(
 			'codebraidPreview', // Type
 			'Codebraid Preview', // Panel title
@@ -155,13 +174,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			{   // Options
 				enableScripts: true,
 				retainContextWhenHidden: true,
-				localResourceRoots: [
-					vscode.Uri.file(this.cwd),
-					vscode.Uri.file(this.extension.context.asAbsolutePath('media')),
-					vscode.Uri.file(this.extension.context.asAbsolutePath('scripts')),
-					vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist')),
-					vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist')),
-				],
+				localResourceRoots: localResourceRoots,
 			}
 		);
 		this.disposables.push(this.panel);
@@ -204,6 +217,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			['style-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
 			['font-src', [`${this.panel.webview.cspSource}`]],
 			['img-src', [`${this.panel.webview.cspSource}`]],
+			['media-src', [`${this.panel.webview.cspSource}`]],
 			['script-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
 		]);
 		let contentSecurityContent: Array<string> = [];
