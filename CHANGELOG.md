@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.11.0 (dev)
+## v0.11.0 (2023-01-16)
 
 * The preview panel now has access to local resources in the workspace
   folders, not just access to resources in the document directory.
@@ -33,6 +33,8 @@
 * All preview customization to the Pandoc HTML output is now inserted after
   rather than before the charset meta tag.  This includes the base tag,
   content security policy meta tag, and Codebraid scripts.
+
+* Updated KaTeX to v0.16.4.
 
 
 ## v0.10.0 (2022-12-04)
