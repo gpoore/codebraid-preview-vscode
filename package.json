@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.11.0-dev1",
+  "version": "0.11.0-dev2",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -113,6 +113,61 @@
           "type": "boolean",
           "default": true,
           "description": "Display a verbatim representation of non-HTML raw content `{=format}` in the preview."
+        },
+        "codebraid.preview.security.allowInlineScripts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to use inline scripts <script>...</script>.  (Scripts bundled as part of the extension are always allowed.)"
+        },
+        "codebraid.preview.security.allowLocalFonts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load fonts from the current workspace folder, the document directory, and any other locations specified in security.extraLocalResourceRoots.  (Fonts bundled as part of the extension are always allowed.)"
+        },
+        "codebraid.preview.security.allowLocalImages": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load images from the current workspace folder, the document directory, and any other locations specified in security.extraLocalResourceRoots."
+        },
+        "codebraid.preview.security.allowLocalMedia": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load media from the current workspace folder, the document directory, and any other locations specified in security.extraLocalResourceRoots."
+        },
+        "codebraid.preview.security.allowLocalScripts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load scripts from the current workspace folder, the document directory, and any other locations specified in security.extraLocalResourceRoots.  (Scripts bundled as part of the extension are always allowed.)"
+        },
+        "codebraid.preview.security.allowLocalStyles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load styles from the current workspace folder, the document directory, and any other locations specified in security.extraLocalResourceRoots.  (Styles bundled as part of the extension are always allowed.)"
+        },
+        "codebraid.preview.security.allowRemoteFonts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load fonts from remote locations via https."
+        },
+        "codebraid.preview.security.allowRemoteImages": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load images from remote locations via https."
+        },
+        "codebraid.preview.security.allowRemoteMedia": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load media from remote locations via https."
+        },
+        "codebraid.preview.security.allowRemoteScripts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load scripts from remote locations via https."
+        },
+        "codebraid.preview.security.allowRemoteStyles": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load styles from remote locations via https."
         },
         "codebraid.preview.security.extraLocalResourceRoots": {
           "type": "array",

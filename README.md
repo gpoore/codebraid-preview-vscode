@@ -92,7 +92,7 @@ currently available.  The preview always remains live.
   Codebraid" command.
 
 
-## Requirements
+## Setup and requirements
 
 Install [Pandoc](https://pandoc.org/).  The latest version is recommended.
 Versions before 2.17.1.1 may work but will have reduced functionality,
@@ -100,6 +100,12 @@ including scroll sync issues with YAML metadata.
 
 For code execution, install the latest version of
 [Codebraid](https://github.com/gpoore/codebraid/).
+
+You may want to review the default security settings under
+`codebraid.preview.security`.  For example, if you are using remote images,
+you will need to enable `codebraid.preview.security.allowRemoteImages`.  If
+you are using Codebraid with Jupyter output that involves scripts, then you
+will need to enable inline scripts or local scripts.
 
 
 ## A note on input formats and `commonmark_x`
@@ -177,6 +183,8 @@ example, in a Lua filter these nodes can be detected by checking
 
 ## Extension settings
 
+### Document build and display
+
 * `codebraid.preview.css.overrideDefault` [`true`]:  Whether document CSS
   overrides the preview's default CSS (determines which is loaded last).
 
@@ -184,7 +192,9 @@ example, in a Lua filter these nodes can be detected by checking
   CSS is used.
 
 * `codebraid.preview.minBuildInterval` [`1000`]:  Minimum interval between
-  document builds in milliseconds.  Builds only occur when there are changes.
+  document builds in milliseconds.  Builds only occur when there are changes#.
+
+### Pandoc
 
 * `codebraid.preview.pandoc.fromFormat` [`commonmark_x`]:  Pandoc source
   format (`--from=FORMAT`).  Currently, only `commonmark_x` supports scroll
@@ -232,6 +242,64 @@ example, in a Lua filter these nodes can be detected by checking
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content `{=format}` in the preview.
 
+### Security
+
+The HTML preview is displayed using a webview.  These settings determine which
+local and remote resources, such as images and scripts, can be loaded by the
+webview.  By default, all remote resources are disabled.  By default, local
+resources can only be loaded from the current workspace folders and the
+document directory.  Additional local locations can be added via
+`security.extraLocalResourceRoots`.  All types of local resources are
+permitted by default except for scripts.  Inline scripts are also not
+permitted by default, except for those bundled as part of the extension.
+
+Scripting capabilities should only be enabled when using documents that you
+trust.  Styles (CSS), particularly when combined with images/media or fonts,
+can also have security implications, especially when remote resources are
+involved.
+
+* `codebraid.preview.security.allowInlineScripts` [`false`]:  Allow the
+  preview to use inline scripts `<script>...</script>`.  (Scripts bundled as
+  part of the extension are always allowed.)
+
+* `codebraid.preview.security.allowLocalFonts` [`true`]:  Allow the preview to
+  load fonts from the current workspace folder, the document directory, and
+  any other locations specified in `security.extraLocalResourceRoots`.  (Fonts
+  bundled as part of the extension are always allowed.)
+
+* `codebraid.preview.security.allowLocalImages` [`true`]:  Allow the preview to
+  load images from the current workspace folder, the document directory, and
+  any other locations specified in `security.extraLocalResourceRoots`.
+
+* `codebraid.preview.security.allowLocalMedia` [`true`]:  Allow the preview to
+  load media from the current workspace folder, the document directory, and
+  any other locations specified in `security.extraLocalResourceRoots`.
+
+* `codebraid.preview.security.allowLocalScripts` [`false`]:  Allow the preview
+  to load scripts from the current workspace folder, the document directory,
+  and any other locations specified in `security.extraLocalResourceRoots`.
+  (Scripts bundled as part of the extension are always allowed.)
+
+* `codebraid.preview.security.allowLocalStyles` [`true`]:  Allow the preview
+  to load styles from the current workspace folder, the document directory,
+  and any other locations specified in `security.extraLocalResourceRoots`.
+  (Styles bundled as part of the extension are always allowed.)
+
+* `codebraid.preview.security.allowRemoteFonts` [`false`]:  Allow the preview
+  to load fonts from remote locations via https.
+
+* `codebraid.preview.security.allowRemoteImages` [`false`]:  Allow the preview
+  to load images from remote locations via https.
+
+* `codebraid.preview.security.allowRemoteMedia` [`false`]:  Allow the preview
+  to load media from remote locations via https.
+
+* `codebraid.preview.security.allowRemoteScripts` [`false`]:  Allow the
+  preview to load scripts from remote locations via https.
+
+* `codebraid.preview.security.allowRemoteStyles` [`false`]:  Allow the preview
+  to load styles from remote locations via https.
+
 * `codebraid.preview.security.extraLocalResourceRoots` [none]:  Additional
    root paths from which the preview can load local (filesystem) resources,
    such as images.  These are in addition to the current workspace folders and
@@ -278,9 +346,13 @@ directly.
 ## Security
 
 The HTML preview is displayed using a webview.  A content security policy is
-used to restrict what is possible in the webview.  Inline scripts and styles
-are allowed to support features like KaTeX math.  Loading external resources
-not associated with the extension is disabled.
+used to restrict what is possible in the webview.  Inline styles are
+permitted.  Local resources associated with a document, except for scripts,
+are enabled by default.  All remote resources are disabled by default.  To
+customize webview capabilities, see settings under
+`codebraid.preview.security`.  All resources bundled with the extension
+(styles, fonts, and scripts) are always allowed, to support features like
+KaTeX math and scroll sync.
 
 Code is never automatically executed with Codebraid.  Code is only ever
 executed when a Codebraid class is added to a code block or inline code, and

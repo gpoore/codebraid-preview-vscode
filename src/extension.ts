@@ -15,7 +15,13 @@ import PreviewPanel from './preview_panel';
 import type { ExtensionState } from './types';
 
 
-const supportedFileExtensions = ['.md', '.markdown', '.cbmd'];
+const resourceRoots: Array<string> =  [
+	'media',
+	'scripts',
+	'node_modules/katex/dist',
+	'node_modules/@vscode/codicons/dist',
+]
+const supportedFileExtensions: Array<string> = ['.md', '.markdown', '.cbmd'];
 
 const homedir = os.homedir();
 const isWindows = process.platform === 'win32';
@@ -92,6 +98,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		config: config,
 		normalizedConfigPandocOptions: normalizePandocOptions(config),
 		normalizedExtraLocalResourceRoots: normalizeExtraLocalResourceRoots(config),
+		resourceRootUris: resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root))),
 		log: log,
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
@@ -145,11 +152,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 			extensionState.normalizedConfigPandocOptions = normalizePandocOptions(extensionState.config);
 			extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
 			for (const preview of previews) {
-				if (preview.panel) {
-					preview.pandocPreviewDefaults.update().then(() => {
-						preview.update();
-					});
-				}
+				preview.updateConfiguration();
 			}
 		},
 		null,

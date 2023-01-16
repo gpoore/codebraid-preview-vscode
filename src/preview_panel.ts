@@ -82,10 +82,10 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Display
 	// -------
 	panel: vscode.WebviewPanel | undefined;
+	extensionResourceWebviewRoots: Array<string>;
 	resourceWebviewUris: Record<string, vscode.Uri>;
 	resourcePaths: Record<string, string>;
 	baseTag: string;
-	contentSecurityOptions: Map<string, Array<string>>;
 	contentSecurityTag: string;
 	codebraidPreviewJsTag: string;
 	sourceSupportsScrollSync: boolean;
@@ -148,23 +148,20 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.disposables
 		);
 
-		const localResourceRoots: Array<vscode.Uri> = [
+		const localResourceRootUris: Array<vscode.Uri> = [
 			vscode.Uri.file(this.cwd),
-			vscode.Uri.file(this.extension.context.asAbsolutePath('media')),
-			vscode.Uri.file(this.extension.context.asAbsolutePath('scripts')),
-			vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist')),
-			vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist')),
+			...extension.resourceRootUris,
 		];
 		if (vscode.workspace.workspaceFolders) {
 			for (const folder of vscode.workspace.workspaceFolders) {
-				localResourceRoots.push(folder.uri);
+				localResourceRootUris.push(folder.uri);
 			}
 		}
 		for (const root of extension.normalizedExtraLocalResourceRoots) {
 			if (path.isAbsolute(root)) {
-				localResourceRoots.push(vscode.Uri.file(root));
+				localResourceRootUris.push(vscode.Uri.file(root));
 			} else {
-				localResourceRoots.push(vscode.Uri.file(path.join(this.cwd, root)));
+				localResourceRootUris.push(vscode.Uri.file(path.join(this.cwd, root)));
 			}
 		}
 		this.panel = vscode.window.createWebviewPanel(
@@ -174,7 +171,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			{   // Options
 				enableScripts: true,
 				retainContextWhenHidden: true,
-				localResourceRoots: localResourceRoots,
+				localResourceRoots: localResourceRootUris,
 			}
 		);
 		this.disposables.push(this.panel);
@@ -189,6 +186,14 @@ export default class PreviewPanel implements vscode.Disposable {
 			this,
 			this.disposables
 		);
+		this.extensionResourceWebviewRoots = [];
+		for (const uri of extension.resourceRootUris) {
+			this.extensionResourceWebviewRoots.push(
+				// .asWebviewUri() gives URI for file handling, which needs to
+				// be generalized for use as a root in content security policy
+				`${this.panel.webview.asWebviewUri(uri)}/`.replace(/^https:\/\/[^\/]+\.([^.\/]+\.[^.\/]+)/, 'https://*.$1')
+			);
+		}
 		this.resourceWebviewUris = {
 			katex: this.panel.webview.asWebviewUri(
 				vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist'))
@@ -213,23 +218,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			pandocCodebraidOutputFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
-		this.contentSecurityOptions = new Map([
-			['style-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
-			['font-src', [`${this.panel.webview.cspSource}`]],
-			['img-src', [`${this.panel.webview.cspSource}`]],
-			['media-src', [`${this.panel.webview.cspSource}`]],
-			['script-src', [`${this.panel.webview.cspSource}`, `'unsafe-inline'`]],
-		]);
-		let contentSecurityContent: Array<string> = [];
-		for (const [src, opt] of this.contentSecurityOptions) {
-			contentSecurityContent.push(`${src} ${opt.join(' ')};`);
-		}
-		this.contentSecurityTag = [
-			`<meta http-equiv="Content-Security-Policy"`,
-			`content="default-src 'none';`,
-			contentSecurityContent.join(' '),
-			`">`
-		].join(' ');
+		this.contentSecurityTag = this.getContentSecurityTag();
 		this.codebraidPreviewJsTag = `<script type="module" src="${this.resourceWebviewUris.codebraidPreviewJs}"></script>`;
 		this.sourceSupportsScrollSync = false;
 		this.isScrollingEditorWithPreview = false;
@@ -334,6 +323,12 @@ export default class PreviewPanel implements vscode.Disposable {
 		}
 	}
 
+	async updateConfiguration() {
+		await this.pandocPreviewDefaults.update();
+		this.contentSecurityTag = this.getContentSecurityTag();
+		this.update();
+	}
+
 	onPandocPreviewDefaultsInvalidNotRelevant() {
 		this.fileNames = [this.currentFileName];
 		this.previousFileName = undefined;
@@ -341,6 +336,97 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.fileScope = false;
 		this.toFormat = 'html';
 		this.defaultsFileName = undefined;
+	}
+
+	getContentSecurityTag() : string {
+		if (!this.panel) {
+			return '';
+		}
+
+		const security = this.extension.config.security;
+		const contentSecurityOptions: Map<string, Array<string>> = new Map();
+		// Each source is configured within its own block to scope variables
+		// font-src
+		{
+			const fontSrc: Array<string> = [];
+			contentSecurityOptions.set('font-src', fontSrc);
+			if (security.allowLocalFonts) {
+				fontSrc.push(this.panel.webview.cspSource);
+			} else {
+				fontSrc.push(...this.extensionResourceWebviewRoots);
+			}
+			if (security.allowRemoteFonts) {
+				fontSrc.push('https:');
+			}
+		}
+		// img-src
+		{
+			const imgSrc: Array<string> = [];
+			contentSecurityOptions.set('img-src', imgSrc);
+			if (security.allowLocalImages) {
+				imgSrc.push(this.panel.webview.cspSource);
+			} else {
+				imgSrc.push(...this.extensionResourceWebviewRoots);
+			}
+			if (security.allowRemoteImages) {
+				imgSrc.push('https:');
+			}
+		}
+		// media-src
+		{
+			const mediaSrc: Array<string> = [];
+			contentSecurityOptions.set('media-src', mediaSrc);
+			if (security.allowLocalMedia) {
+				mediaSrc.push(this.panel.webview.cspSource);
+			} else {
+				mediaSrc.push(...this.extensionResourceWebviewRoots);
+			}
+			if (security.allowRemoteMedia) {
+				mediaSrc.push('https:');
+			}
+		}
+		// style-src
+		{
+			const styleSrc: Array<string> = [`'unsafe-inline'`];
+			contentSecurityOptions.set('style-src', styleSrc);
+			if (security.allowLocalStyles) {
+				styleSrc.push(this.panel.webview.cspSource);
+			} else {
+				styleSrc.push(...this.extensionResourceWebviewRoots);
+			}
+			if (security.allowRemoteStyles) {
+				styleSrc.push('https:');
+			}
+		}
+		// script-src
+		{
+			// sha256 hash is for Pandoc KaTeX script
+			const scriptSrc: Array<string> = [`'sha256-67kRF6ir7uYcntligDJr9ckJ39fnGm98n5gLaDW7_a8='`];
+			contentSecurityOptions.set('script-src', scriptSrc);
+			if (security.allowInlineScripts) {
+				scriptSrc.push(`'unsafe-inline'`);
+			}
+			if (security.allowLocalScripts) {
+				scriptSrc.push(this.panel.webview.cspSource);
+			} else {
+				scriptSrc.push(...this.extensionResourceWebviewRoots);
+			}
+			if (security.allowRemoteScripts) {
+				scriptSrc.push('https:');
+			}
+		}
+
+		const contentSecurityElems: Array<string> = [];
+		for (const [src, opt] of contentSecurityOptions) {
+			contentSecurityElems.push(`${src} ${opt.join(' ')};`);
+		}
+		const contentSecurityTag = [
+			`<meta http-equiv="Content-Security-Policy"`,
+			`content="default-src 'none'; `,
+			contentSecurityElems.join(' '),
+			`">`
+		].join(' ');
+		return contentSecurityTag;
 	}
 
 	formatMessage(title: string, message: string) {
@@ -666,10 +752,27 @@ ${message}
 			return;
 		}
 		this.isShowingUpdatingMessage = false;
-		this.panel.webview.html = html.replace(
-			`<head>`,
-			`<head>\n  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}`
-		);
+		let match = /<head>[ \t\r\n]*<meta charset="[a-zA-Z0-9_-]+" +\/>[ \t\r]*\n/.exec(html);
+		if (html.indexOf(`<head>`) === match?.index) {
+			const patchedHtml = [
+				html.slice(0, match.index),
+				`${match[0]}  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}\n`,
+				html.slice(match.index + match[0].length)
+			].join('');
+			this.panel.webview.html = patchedHtml;
+		} else {
+			this.panel.webview.html = this.formatMessage(
+				'Codebraid Preview',
+				[
+					'<h1 style="color:red;">Codebraid Preview Error</h1>',
+					'<h2>Pandoc returned unexpected, potentially invalid HTML:</h2>',
+					'<pre style="white-space: pre-wrap;">',
+					this.convertStringToLiteralHtml(html),
+					'</pre>',
+					''
+				].join('\n')
+			);
+		}
 	}
 
 

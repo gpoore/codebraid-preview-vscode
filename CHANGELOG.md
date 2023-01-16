@@ -3,14 +3,36 @@
 
 ## v0.11.0 (dev)
 
+* The preview panel now has access to local resources in the workspace
+  folders, not just access to resources in the document directory.
+
 * Added new setting `codebraid.preview.security.extraLocalResourceRoots`.
   This allows the preview panel to load resources such as images from
   locations other than the document directory and the workspace folders (#15).
 
-* The preview panel now has access to local resources in the workspace
-  folders, not just access to resources in the document directory.
+* Reimplemented content security policy and added new related settings under
+  `codebraid.preview.security` (#8, #13).
 
-* The webview Content Security Policy now includes `media-src`.
+  - The webview content security policy now includes `media-src`.
+
+  - There are new settings that determine whether fonts, images, media,
+    styles, and scripts are allowed from local sources and from remote
+    sources.  By default, local sources are enabled for everything except
+    scripts.  Local access is restricted to the document directory, the
+    workspace folders, and any additional locations specified under
+    `security.extraLocalResourceRoots`.  By default, remote sources are
+    disabled.  Inline scripts are also disabled by default.
+
+  - Scripts are now more restricted by default. `script-src` no longer
+    includes `unsafe-inline` or the document directory.  Only scripts bundled
+    with the extension are enabled by default, plus inline scripts from
+    Pandoc's HTML template (which are enabled via hash).  To re-enable inline
+    scripts, use `security.allowInlineScripts`.  To re-enable local scripts,
+    use `security.allowLocalScripts`.
+
+* All preview customization to the Pandoc HTML output is now inserted after
+  rather than before the charset meta tag.  This includes the base tag,
+  content security policy meta tag, and Codebraid scripts.
 
 
 ## v0.10.0 (2022-12-04)

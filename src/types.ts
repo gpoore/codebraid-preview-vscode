@@ -15,6 +15,7 @@ export type ExtensionState = {
 	'config': vscode.WorkspaceConfiguration,
 	'normalizedConfigPandocOptions': Array<string>,
 	'normalizedExtraLocalResourceRoots': Array<string>,
+	'resourceRootUris': Array<vscode.Uri>,
 	'log': (message: string) => void,
 	'statusBarItems': {
 		'openPreview': vscode.StatusBarItem
