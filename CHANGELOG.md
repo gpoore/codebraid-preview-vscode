@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.12.0 (dev)
+## v0.12.0 (2023-01-19)
 
 * Pandoc 3.0 compatibility:  Updated Lua filters by replacing `pandoc.Null()`
   with `pandoc.Blocks{}`.  Minimum supported Codebraid version is now v0.10.3.
