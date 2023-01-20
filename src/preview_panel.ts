@@ -770,7 +770,24 @@ ${message}
 	}
 
 
-	setWebviewHTML(html: string) {
+	showPreviewError(executable: string, error: child_process.ExecFileException) {
+		if (!this.panel) {
+			return;
+		}
+		this.panel.webview.html = this.formatMessage(
+			'Codebraid Preview',
+			[
+				'<h1 style="color:red;">Codebraid Preview Error</h1>',
+				`<h2><code>${executable}</code> failed:</h2>`,
+				'<pre style="white-space: pre-wrap;">',
+				this.convertStringToLiteralHtml(String(error)),
+				'</pre>',
+				''
+			].join('\n')
+		);
+	}
+
+	showPreviewHtml(html: string) {
 		if (!this.panel) {
 			return;
 		}
@@ -1109,25 +1126,13 @@ ${message}
 				if (!this.panel) {
 					return;
 				}
-				let output: string;
 				if (error) {
-					output = this.formatMessage(
-						'Codebraid Preview',
-						[
-							'<h1 style="color:red;">Codebraid Preview Error</h1>',
-							`<h2><code>${executable}</code> failed:</h2>`,
-							'<pre style="white-space: pre-wrap;">',
-							this.convertStringToLiteralHtml(String(error)),
-							'</pre>',
-							''
-						].join('\n')
-					);
+					this.showPreviewError(executable, error);
 					this.scrollSyncOffset = 0;
 					this.sourceSupportsScrollSync = false;
 				} else {
-					output = stdout;
+					this.showPreviewHtml(stdout);
 				}
-				this.setWebviewHTML(output);
 				this.buildIsInProgress = false;
 				if (this.needsBuild) {
 					setTimeout(() => {this.update();}, 0);

@@ -11,6 +11,9 @@
 * Updated preview CSS to include the most recent CSS used by the built-in VS
   Code Markdown preview.
 
+* Fixed bug from v0.11.0 that caused error messages from Pandoc to be
+  displayed incorrectly.
+
 
 
 ## v0.11.0 (2023-01-16)
