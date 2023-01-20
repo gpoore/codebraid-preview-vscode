@@ -243,7 +243,7 @@ function codeChunk(elem, isInline)
         if isInline then
             return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['missing'] .. chunkStageClass})
         else
-            return pandoc.Div(pandoc.Null(), {class=classes['missing'] .. chunkStageClass})
+            return pandoc.Div(pandoc.Blocks{}, {class=classes['missing'] .. chunkStageClass})
         end
     end
     local nodeIndex = codebraidKeyCurrentIndex[key]
@@ -256,7 +256,7 @@ function codeChunk(elem, isInline)
         if isInline then
             return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['missing'] .. chunkStageClass})
         else
-            return pandoc.Div(pandoc.Null(), {class=classes['missing'] .. chunkStageClass})
+            return pandoc.Div(pandoc.Blocks{}, {class=classes['missing'] .. chunkStageClass})
         end
     end
     if codebraidIsRunning and codebraidKeyIsProcessing ~= nil and codebraidKeyIsProcessing[key] then
@@ -268,7 +268,7 @@ function codeChunk(elem, isInline)
         if isInline then
             return pandoc.Span(pandoc.Span(pandoc.Inlines{}), {class=classes['placeholder'] .. chunkStageClass})
         else
-            return pandoc.Div(pandoc.Null(), {class=classes['placeholder'] .. chunkStageClass})
+            return pandoc.Div(pandoc.Blocks{}, {class=classes['placeholder'] .. chunkStageClass})
         end
     end
     local isModified = false
@@ -295,7 +295,7 @@ function codeChunk(elem, isInline)
         if isInline then
             output = pandoc.Span(pandoc.Inlines{})
         else
-            output = pandoc.Null()
+            output = pandoc.Blocks{}
         end
     end
     local baseClass

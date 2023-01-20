@@ -9,11 +9,11 @@
 import * as child_process from 'child_process';
 
 
-const minVersion: [number, number, number] = [0, 9, 0];
+const minVersion: [number, number, number] = [0, 10, 3];
 const minMajor = minVersion[0];
 const minMinor = minVersion[1];
 const minPatch = minVersion[2];
-export const minCodebraidVersion: string = `v${minMajor}.${minMinor}.${minPatch}`;
+export const minCodebraidVersion: string = `${minMajor}.${minMinor}.${minPatch}`;
 
 const compatibleCodebraidPaths: Set<string> = new Set();
 

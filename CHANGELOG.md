@@ -3,6 +3,9 @@
 
 ## v0.12.0 (dev)
 
+* Pandoc 3.0 compatibility:  Updated Lua filters by replacing `pandoc.Null()`
+  with `pandoc.Blocks{}`.  Minimum supported Codebraid version is now v0.10.3.
+
 * Added new setting `codebraid.preview.css.useMarkdownPreviewFontSettings`.
   This causes the preview to inherit font settings (font family, font size,
   line height) from the built-in Markdown preview (settings under

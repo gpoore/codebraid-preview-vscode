@@ -987,7 +987,7 @@ ${message}
 			vscode.window.showErrorMessage([
 				`Codebraid executable is outdated and unsupported.`,
 				`Code execution is disabled.`,
-				`Upgrade from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+				`Upgrade to v${minCodebraidVersion}+ at https://pypi.org/project/codebraid/.`,
 			].join(' '));
 		} else {
 			if (this.codebraidCommand === undefined) {

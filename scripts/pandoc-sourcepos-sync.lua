@@ -214,7 +214,7 @@ function Pandoc(doc)
     end
     for lineNumber, identifier in pairs(referenceLinesToIds) do
         doc.blocks:insert(
-            pandoc.Div(pandoc.Null(), {
+            pandoc.Div(pandoc.Blocks{}, {
                 id='codebraid-sourcepos-' .. tostring(lineNumber),
                 class='codebraid-sourcepos-ref',
                 ['codebraid-sourcepos-ref']=identifier
@@ -222,7 +222,7 @@ function Pandoc(doc)
         )
     end
     doc.blocks:insert(
-        pandoc.Div(pandoc.Null(), {
+        pandoc.Div(pandoc.Blocks{}, {
             id='codebraid-sourcepos-meta',
             class='codebraid-sourcepos-meta',
             ['codebraid-sourcepos-min']=minLineNum,
