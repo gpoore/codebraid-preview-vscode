@@ -87,6 +87,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	resourcePaths: Record<string, string>;
 	baseTag: string;
 	contentSecurityTag: string;
+	mdPreviewExtHtmlStyleAttr: string;
 	codebraidPreviewJsTag: string;
 	sourceSupportsScrollSync: boolean;
 	isScrollingEditorWithPreview: boolean;
@@ -219,6 +220,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		};
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
 		this.contentSecurityTag = this.getContentSecurityTag();
+		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
 		this.codebraidPreviewJsTag = `<script type="module" src="${this.resourceWebviewUris.codebraidPreviewJs}"></script>`;
 		this.sourceSupportsScrollSync = false;
 		this.isScrollingEditorWithPreview = false;
@@ -326,6 +328,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	async updateConfiguration() {
 		await this.pandocPreviewDefaults.update();
 		this.contentSecurityTag = this.getContentSecurityTag();
+		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
 		this.update();
 	}
 
@@ -336,6 +339,20 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.fileScope = false;
 		this.toFormat = 'html';
 		this.defaultsFileName = undefined;
+	}
+
+	getMdPreviewExtHtmlStyleAttr() : string {
+		// Create a style attribute for use in the preview <html> tag to set
+		// font-related properties.  This allows font settings to be
+		// inherited from the built-in Markdown preview.  Reference:
+		// https://github.com/microsoft/vscode/blob/b7415cacddd44db3543b74eb9296cadc358762a7/extensions/markdown-language-features/src/preview/documentRenderer.ts#L88
+		const mdPreviewExtConfig = vscode.workspace.getConfiguration('markdown.preview');
+		const styleAttr = [
+			mdPreviewExtConfig.fontFamily ? `--markdown-font-family: ${mdPreviewExtConfig.fontFamily};` : '',
+			isNaN(mdPreviewExtConfig.fontSize) ? '' : `--markdown-font-size: ${mdPreviewExtConfig.fontSize}px;`,
+			isNaN(mdPreviewExtConfig.lineHeight) ? '' : `--markdown-line-height: ${mdPreviewExtConfig.lineHeight};`,
+		].join(' ').replace(/"/g, '&quot;');
+		return styleAttr;
 	}
 
 	getContentSecurityTag() : string {
@@ -430,8 +447,14 @@ export default class PreviewPanel implements vscode.Disposable {
 	}
 
 	formatMessage(title: string, message: string) {
+		let htmlStyle: string;
+		if (this.extension.config.css.useMarkdownPreviewFontSettings) {
+			htmlStyle = `style="${this.mdPreviewExtHtmlStyleAttr}"`;
+		} else {
+			htmlStyle = '';
+		}
 		return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" ${htmlStyle}>
 <head>
 	<meta charset="UTF-8">
 	${this.baseTag}
@@ -754,10 +777,16 @@ ${message}
 		this.isShowingUpdatingMessage = false;
 		let match = /<head>[ \t\r\n]*<meta charset="[a-zA-Z0-9_-]+" +\/>[ \t\r]*\n/.exec(html);
 		if (html.indexOf(`<head>`) === match?.index) {
+			let htmlStart = html.slice(0, match.index);
+			if (this.extension.config.css.useMarkdownPreviewFontSettings) {
+				htmlStart = htmlStart.replace('<html', `<html style="${this.mdPreviewExtHtmlStyleAttr}"`);
+			}
+			const newHeadCharsetPreviewTags = `${match[0]}  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}\n`;
+			const htmlEnd = html.slice(match.index + match[0].length);
 			const patchedHtml = [
-				html.slice(0, match.index),
-				`${match[0]}  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}\n`,
-				html.slice(match.index + match[0].length)
+				htmlStart,
+				newHeadCharsetPreviewTags,
+				htmlEnd,
 			].join('');
 			this.panel.webview.html = patchedHtml;
 		} else {

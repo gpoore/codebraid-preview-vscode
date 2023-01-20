@@ -1,6 +1,18 @@
 # Change Log
 
 
+## v0.12.0 (dev)
+
+* Added new setting `codebraid.preview.css.useMarkdownPreviewFontSettings`.
+  This causes the preview to inherit font settings (font family, font size,
+  line height) from the built-in Markdown preview (settings under
+  `markdown.preview`), to maintain a similar appearance.
+
+* Updated preview CSS to include the most recent CSS used by the built-in VS
+  Code Markdown preview.
+
+
+
 ## v0.11.0 (2023-01-16)
 
 * The preview panel now has access to local resources in the workspace
@@ -37,6 +49,7 @@
 * Updated KaTeX to v0.16.4.
 
 
+
 ## v0.10.0 (2022-12-04)
 
 * Added new settings `codebraid.preview.css.useDefault` and
@@ -48,6 +61,7 @@
   Pandoc settings.
 
 * Updated KaTeX to v0.16.3.
+
 
 
 ## v0.9.0 (2022-07-29)
