@@ -1,7 +1,7 @@
 # Change Log
 
 
-# v0.13.0 (dev)
+# v0.13.0 (2023-03-25)
 
 * Pandoc 3.1.1 is now the minimum recommended version.  The Pandoc version is
   now checked when the extension loads, and there are warnings for older
