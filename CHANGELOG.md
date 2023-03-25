@@ -73,6 +73,10 @@
   configuration during preview update, Codebraid execution, or document export
   no longer has the potential to result in inconsistent state.
 
+* Removed Julia syntax highlighting customization (#4), since it has been
+  merged upstream
+  (https://github.com/microsoft/vscode-markdown-tm-grammar/pull/111).
+
 
 
 ## v0.12.0 (2023-01-19)

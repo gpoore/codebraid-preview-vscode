@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.13.0-dev1",
+  "version": "0.13.0-dev2",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -25,18 +25,6 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
-    "grammars": [
-      {
-        "path": "./syntaxes/julia_codeblock.json",
-        "scopeName": "markdown.julia.codebraid",
-        "injectTo": [
-          "text.html.markdown"
-        ],
-        "embeddedLanguages": {
-          "meta.embedded.block.julia": "julia"
-        }
-      }
-    ],
     "commands": [
       {
         "command": "codebraidPreview.startPreview",
