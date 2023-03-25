@@ -20,4 +20,4 @@ vsc-extension-quickstart.md
 **/*.ts
 _dev_research/**
 readme_media/**
-
+pandoc/defaults/**

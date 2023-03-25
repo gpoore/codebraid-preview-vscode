@@ -1,4 +1,4 @@
-// Copyright (c) 2022, Geoffrey M. Poore
+// Copyright (c) 2022-2023, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -9,14 +9,37 @@
 import * as vscode from 'vscode';
 
 import * as child_process from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
 import type { ExtensionState } from './types';
-import PandocPreviewDefaults from './pandoc_preview_defaults';
-import {countNewlines} from './util';
-import {checkCodebraidVersion, minCodebraidVersion} from './check_codebraid';
+import { PandocReader, PandocWriter, fallbackHtmlWriter } from './pandoc_util';
+import type { PandocPreviewBuildConfig, PandocExportBuildConfig, PandocBuildConfigCollection } from './pandoc_build_configs';
+import { PandocDefaultsFile } from './pandoc_defaults_file';
+import { countNewlines, FileExtension } from './util';
+import { webviewResources, pandocResources } from './resources';
+import { checkCodebraidVersion, minCodebraidVersionString } from './check_codebraid';
+import { readersWithWrapper, builtinToFileExtensionMap, defaultSaveDialogFilter, defaultSaveDialogFileExtensionToFilterKeyMap } from './pandoc_settings';
 
+
+type Source = {
+	index: number,
+	fileName: string, fileText: string, fileTextLines: number,
+	endPaddingText: string, totalTextLines: number,
+};
+type Sources = Array<Source>;
+
+type PandocPreviewOptions = {
+	reader: PandocReader | undefined;
+	writer: PandocWriter | undefined;
+	fileScope: boolean | undefined;
+};
+
+type ScrollSyncData = {
+	offset: number;
+	map: Map<string, [number, number]>;
+};
 
 type UpdatingStatus = null | 'waiting' | 'running' | 'finished';
 const yamlMetadataRegex = /^---[ \t]*\r?\n.+?\n(?:---|\.\.\.)[ \t]*\r?\n/us;
@@ -44,7 +67,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Extension
 	// ---------
 	extension: ExtensionState;
-	_onDisposeExtensionCallback?: () => void;
+	private onDisposeExtensionCallback?: () => void;
 
 	// Files
 	// -----
@@ -73,29 +96,43 @@ export default class PreviewPanel implements vscode.Disposable {
 
 	// Pandoc
 	// ------
-	fromFormat: string;
-	fileScope: boolean;
-	toFormat: string;
-	pandocPreviewDefaults: PandocPreviewDefaults;
-	defaultsFileName: string | undefined;
+	fileExtension: FileExtension;
+	pandocPreviewOptions: PandocPreviewOptions | undefined;
+	lastPandocPreviewOptions: PandocPreviewOptions | undefined;
+	pandocPreviewBuildConfig: PandocPreviewBuildConfig | undefined;
+	lastPandocPreviewBuildConfig: PandocPreviewBuildConfig | undefined;
+	documentPandocDefaultsFile: PandocDefaultsFile;
+	pandocPreviewWriterQuickPick: vscode.QuickPick<vscode.QuickPickItem> | undefined;
+	pandocExportWriterQuickPick: vscode.QuickPick<vscode.QuickPickItem> | undefined;
+	pandocExportBuildConfigs: Map<string, PandocExportBuildConfig> | undefined;
+	lastExportFileNameNoExt: string | undefined;
+	lastExportFileExtension: string | undefined;
+	lastExportWriterName: string | undefined;
 
 	// Display
 	// -------
 	panel: vscode.WebviewPanel | undefined;
 	extensionResourceWebviewRoots: Array<string>;
-	resourceWebviewUris: Record<string, vscode.Uri>;
-	resourcePaths: Record<string, string>;
+	webviewResourceUris: Record<string, vscode.Uri>;
+	pandocResourcePaths: Record<string, string>;
 	baseTag: string;
+	contentSecurityNonce: string;
+	usingContentSecurityNonce: boolean;
 	contentSecurityTag: string;
 	mdPreviewExtHtmlStyleAttr: string;
 	codebraidPreviewJsTag: string;
-	sourceSupportsScrollSync: boolean;
+	hasScrollSync: boolean;
 	isScrollingEditorWithPreview: boolean;
 	isScrollingEditorWithPreviewTimer: NodeJS.Timer | undefined;
-	scrollSyncOffset: number;
-	scrollSyncMap: Map<string, [number, number]> | undefined;
-	scrollSyncMapMaxLine: number;
+	sourceOffset: number;
+	sourceMap: Map<string, [number, number]>;
 	isShowingUpdatingMessage: boolean;
+	isShowingErrorMessage: boolean;
+	updateTimer: NodeJS.Timer | undefined;
+	webviewTempAlerts: boolean | undefined;
+	moveCursorTextDecoration: vscode.TextEditorDecorationType;
+	moveCursorTextDecorationTimer: NodeJS.Timer | undefined;
+	updateConfigurationTimer: NodeJS.Timer | undefined;
 
 	// Subprocess
 	// ----------
@@ -112,42 +149,32 @@ export default class PreviewPanel implements vscode.Disposable {
 	codebraidProcessOptions: child_process.SpawnOptions;
 	lastBuildTime: number;
 	needsBuild: boolean;
-	buildIsScheduled: boolean;
-	buildIsInProgress: boolean;
+	isBuildInProgress: boolean;
 	usingCodebraid: boolean;
-	codebraidIsInProgress: boolean;
-	codebraidHasMessageErrors: boolean;
+	isCodebraidInProgress: boolean;
+	hasCodebraidMessageErrors: boolean;
 	didCheckInitialCodebraidCache: boolean;
 	oldCodebraidOutput: Map<string, Array<string>>;
 	currentCodebraidOutput: Map<string, Array<string>>;
 	codebraidProcessingStatus: Map<string, boolean>;
 	codebraidPlaceholderLangs: Map<string, string>;
+	isExporting: boolean;
 
-	constructor(editor: vscode.TextEditor, extension: ExtensionState) {
+	constructor(editor: vscode.TextEditor, extension: ExtensionState, fileExtension: FileExtension) {
 		this.disposables = [];
 
 		this.extension = extension;
+		this.fileExtension = fileExtension;
 
 		this.cwd = path.dirname(editor.document.uri.fsPath);
 		this.fileNames = [editor.document.fileName];
 		this.uriCache = new Map();
 		this.visibleEditor = editor;
 		this.currentFileName = editor.document.fileName;
-		this.fromFormat = extension.config.pandoc.fromFormat;
-		this.fileScope = false;
-		this.toFormat = 'html';
-		this.pandocPreviewDefaults = new PandocPreviewDefaults(this);
 
-		vscode.window.onDidChangeActiveTextEditor(
-			this.onDidChangeActiveTextEditor,
-			this,
-			this.disposables
-		);
-		vscode.window.onDidChangeVisibleTextEditors(
-			this.onDidChangeVisibleTextEditors,
-			this,
-			this.disposables
-		);
+		// Wait to create defaults until the attributes needed are set
+		this.documentPandocDefaultsFile = new PandocDefaultsFile(this);
+		this.disposables.push(this.documentPandocDefaultsFile);
 
 		const localResourceRootUris: Array<vscode.Uri> = [
 			vscode.Uri.file(this.cwd),
@@ -175,14 +202,17 @@ export default class PreviewPanel implements vscode.Disposable {
 				localResourceRoots: localResourceRootUris,
 			}
 		);
-		this.disposables.push(this.panel);
 		// Cleanup may be triggered by the webview panel being closed.  Since
 		// `retainContextWhenHidden` is true, the panel won't be disposed when
 		// it isn't visible.
 		this.panel.onDidDispose(
 			() => {
-				this.panel = undefined;
-				this.dispose();
+				if (this.panel) {
+					// Don't call `this.dispose()` when that initiated
+					// disposal
+					this.panel = undefined;
+					this.dispose();
+				}
 			},
 			this,
 			this.disposables
@@ -195,55 +225,47 @@ export default class PreviewPanel implements vscode.Disposable {
 				`${this.panel.webview.asWebviewUri(uri)}/`.replace(/^https:\/\/[^\/]+\.([^.\/]+\.[^.\/]+)/, 'https://*.$1')
 			);
 		}
-		this.resourceWebviewUris = {
-			katex: this.panel.webview.asWebviewUri(
-				vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/katex/dist'))
-			),
-			vscodeCodicon: this.panel.webview.asWebviewUri(
-				vscode.Uri.file(this.extension.context.asAbsolutePath('node_modules/@vscode/codicons/dist/codicon.css'))
-			),
-			vscodeCss: this.panel.webview.asWebviewUri(
-				vscode.Uri.file(this.extension.context.asAbsolutePath('media/vscode-markdown.css'))
-			),
-			codebraidCss: this.panel.webview.asWebviewUri(
-				vscode.Uri.file(this.extension.context.asAbsolutePath('media/codebraid-preview.css'))
-			),
-			codebraidPreviewJs: this.panel.webview.asWebviewUri(
-				vscode.Uri.file(this.extension.context.asAbsolutePath('scripts/codebraid-preview.js'))
-			),
-		};
-		this.resourcePaths = {
-			pandocSourcePosPreprocFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-preproc.lua'),
-			pandocSourcePosSyncFilter: this.extension.context.asAbsolutePath('scripts/pandoc-sourcepos-sync.lua'),
-			pandocShowRawFilter: this.extension.context.asAbsolutePath('scripts/pandoc-raw.lua'),
-			pandocCodebraidOutputFilter: this.extension.context.asAbsolutePath('scripts/pandoc-codebraid-output.lua'),
-		};
+		this.webviewResourceUris = {};
+		for (const [key, resource] of Object.entries(webviewResources)) {
+			this.webviewResourceUris[key] = this.panel.webview.asWebviewUri(
+				vscode.Uri.file(this.extension.context.asAbsolutePath(resource))
+			);
+		}
+		this.pandocResourcePaths = {};
+		for (const [key, value] of Object.entries(pandocResources)) {
+			this.pandocResourcePaths[key] = this.extension.context.asAbsolutePath(value);
+		}
 		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
+		this.contentSecurityNonce = this.getContentSecurityNonce();
+		this.usingContentSecurityNonce = false;
 		this.contentSecurityTag = this.getContentSecurityTag();
 		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
-		this.codebraidPreviewJsTag = `<script type="module" src="${this.resourceWebviewUris.codebraidPreviewJs}"></script>`;
-		this.sourceSupportsScrollSync = false;
+		this.codebraidPreviewJsTag = `<script type="module" src="${this.webviewResourceUris.codebraidPreviewJs}"></script>`;
+		this.hasScrollSync = false;
 		this.isScrollingEditorWithPreview = false;
-		this.scrollSyncOffset = 0;
-		this.scrollSyncMapMaxLine = 0;
+		this.sourceOffset = 0;
+		this.sourceMap = new Map();
 		this.isShowingUpdatingMessage = true;
+		this.isShowingErrorMessage = false;
+		this.moveCursorTextDecoration = vscode.window.createTextEditorDecorationType({backgroundColor: 'cornflowerblue', isWholeLine: true});
+		this.disposables.push(this.moveCursorTextDecoration);
 		this.showUpdatingMessage(null, null);
 
 		this.pandocPreviewArgs = [
 			`--standalone`,
-			`--lua-filter="${this.resourcePaths.pandocSourcePosSyncFilter}"`,
-			`--katex=${this.resourceWebviewUris.katex}/`,
+			`--lua-filter="${this.pandocResourcePaths.sourceposSyncFilter}"`,
+			`--katex=${this.webviewResourceUris.katex}/`,
 		];
 		this.pandocCssArgs = [
-			`--css=${this.resourceWebviewUris.vscodeCss}`,
-			`--css=${this.resourceWebviewUris.vscodeCodicon}`,
-			`--css=${this.resourceWebviewUris.codebraidCss}`,
+			`--css=${this.webviewResourceUris.vscodeCss}`,
+			`--css=${this.webviewResourceUris.vscodeCodicon}`,
+			`--css=${this.webviewResourceUris.codebraidCss}`,
 		];
 		this.pandocShowRawArgs = [
-			`--lua-filter="${this.resourcePaths.pandocShowRawFilter}"`,
+			`--lua-filter="${this.pandocResourcePaths.showRawFilter}"`,
 		];
 		this.pandocWithCodebraidOutputArgs = [
-			`--lua-filter="${this.resourcePaths.pandocCodebraidOutputFilter}"`,
+			`--lua-filter="${this.pandocResourcePaths.codebraidOutputFilter}"`,
 		];
 		this.pandocExportArgs = [
 			'--standalone',
@@ -270,11 +292,23 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.codebraidPlaceholderLangs = new Map();
 		this.lastBuildTime = 0;
 		this.needsBuild = true;
-		this.buildIsScheduled = false;
-		this.buildIsInProgress = false;
-		this.codebraidIsInProgress = false;
-		this.codebraidHasMessageErrors = false;
+		this.isBuildInProgress = false;
+		this.isCodebraidInProgress = false;
+		this.hasCodebraidMessageErrors = false;
 		this.usingCodebraid = false;
+		this.isExporting = false;
+
+		vscode.window.onDidChangeActiveTextEditor(
+			this.onDidChangeActiveTextEditor,
+			this,
+			this.disposables
+		);
+
+		vscode.window.onDidChangeVisibleTextEditors(
+			this.onDidChangeVisibleTextEditors,
+			this,
+			this.disposables
+		);
 
 		vscode.workspace.onDidChangeTextDocument(
 			this.onDidChangeTextDocument,
@@ -300,45 +334,255 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.disposables
 		);
 
-		// Need to wait until any preview defaults file is read and processed
-		// before creating initial preview.
-		this.pandocPreviewDefaults.update().then(() => {
-			this.update().then(() => {
-				this.onDidChangePreviewEditor(editor);
-			});
-		});
+		this.updateConfiguration();
 	}
 
 	registerOnDisposeCallback(callback: () => void) {
-		this._onDisposeExtensionCallback = callback;
+		this.onDisposeExtensionCallback = callback;
 	}
 
 	dispose() {
-		this.panel = undefined;
+		if (this.panel) {
+			const panel = this.panel;
+			this.panel = undefined;
+			panel.dispose();
+		}
+		for (const timer of [this.updateTimer, this.moveCursorTextDecorationTimer, this.updateConfigurationTimer]) {
+			if (timer) {
+				clearTimeout(timer);
+			}
+		}
+		for (const quickPick of [this.pandocPreviewWriterQuickPick, this.pandocExportWriterQuickPick]) {
+			if (quickPick) {
+				quickPick.dispose();
+			}
+		}
 		for (const disposable of this.disposables) {
 			disposable.dispose();
 		}
 		this.disposables.length = 0;
-		if (this._onDisposeExtensionCallback) {
-			this._onDisposeExtensionCallback();
-			this._onDisposeExtensionCallback = undefined;
+		if (this.onDisposeExtensionCallback) {
+			this.onDisposeExtensionCallback();
+			this.onDisposeExtensionCallback = undefined;
 		}
 	}
 
 	async updateConfiguration() {
-		await this.pandocPreviewDefaults.update();
-		this.contentSecurityTag = this.getContentSecurityTag();
+		if (this.isBuildInProgress || this.isCodebraidInProgress || this.isExporting) {
+			if (this.updateConfigurationTimer) {
+				clearTimeout(this.updateConfigurationTimer);
+			}
+			this.updateConfigurationTimer = setTimeout(
+				() => {
+					this.updateConfigurationTimer = undefined;
+					if (!this.panel) {
+						return;
+					}
+					this.updateConfiguration();
+				},
+				50
+			);
+			return;
+		}
+		this.resetContentSecurity();
 		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
+
+		this.lastPandocPreviewOptions = this.pandocPreviewOptions;
+		this.pandocPreviewOptions = undefined;
+		this.lastPandocPreviewBuildConfig = this.pandocPreviewBuildConfig;
+		this.pandocPreviewBuildConfig = undefined;
+		this.pandocExportBuildConfigs = undefined;
+		for (const quickPick of [this.pandocPreviewWriterQuickPick, this.pandocExportWriterQuickPick]) {
+			if (quickPick) {
+				quickPick.dispose();
+			}
+		}
+		this.documentPandocDefaultsFile.update(() => {
+			this.updateFileNames();
+			this.updatePandocConfigs();
+		});
+	}
+
+	private updateFileNames() {
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.inputFiles) {
+			this.fileNames = this.documentPandocDefaultsFile.data?.inputFiles;
+			if (this.previousFileName && this.fileNames.indexOf(this.previousFileName) === -1) {
+				this.previousFileName = undefined;
+			}
+		} else {
+			this.fileNames = [this.currentFileName];
+			this.previousFileName = undefined;
+		}
+	}
+
+	private updatePandocConfigs() {
+		let buildConfigCollection: PandocBuildConfigCollection | undefined;
+		buildConfigCollection = this.extension.pandocBuildConfigCollections.getConfigCollection(this.fileExtension);
+		if (!buildConfigCollection && (!this.documentPandocDefaultsFile.isRelevant || !this.documentPandocDefaultsFile.data?.hasReader)) {
+			buildConfigCollection = this.extension.pandocBuildConfigCollections.getFallbackConfigCollection(this.fileExtension);
+			if (buildConfigCollection) {
+				vscode.window.showWarningMessage([
+					`"pandoc.build" settings for ${this.fileExtension} are missing or invalid;`,
+					`default fallback preview settings will be used until this is fixed`,
+				].join(' '));
+			} else {
+				vscode.window.showErrorMessage([
+					`"pandoc.build" settings for ${this.fileExtension} are missing or invalid;`,
+					`preview update will be disabled until this is fixed`,
+				].join(' '));
+				return;
+			}
+		}
+		this.pandocExportBuildConfigs = buildConfigCollection?.export;
+
+		let previewBuildConfig: PandocPreviewBuildConfig | undefined;
+		if (!buildConfigCollection) {
+			this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+			return;
+		}
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.rawWriterString) {
+			const rawWriterString = this.documentPandocDefaultsFile.data.rawWriterString;
+			if (this.lastPandocPreviewOptions?.writer?.asPandocString === rawWriterString) {
+				previewBuildConfig = buildConfigCollection.preview.get(this.lastPandocPreviewOptions.writer.name);
+			}
+			if (previewBuildConfig) {
+				this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+				return;
+			}
+			let possibleConfigCount: number = 0;
+			for (const buildConfig of buildConfigCollection.preview.values()) {
+				if (buildConfig.writer.asPandocString === rawWriterString) {
+					possibleConfigCount += 1;
+					previewBuildConfig = buildConfig;
+				}
+			}
+			if (possibleConfigCount <= 1) {
+				this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+			} else {
+				this.updatePandocPreviewBuildConfigAndSettingsQuickPick(buildConfigCollection);
+			}
+			return;
+		}
+		// There is always at least one config, a fallback for HTML
+		if (buildConfigCollection.preview.size === 1) {
+			previewBuildConfig = buildConfigCollection.preview.values().next().value;
+		} else if (this.lastPandocPreviewOptions?.writer) {
+			previewBuildConfig = buildConfigCollection.preview.get(this.lastPandocPreviewOptions.writer.name);
+		}
+		if (previewBuildConfig) {
+			this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+		} else {
+			this.updatePandocPreviewBuildConfigAndSettingsQuickPick(buildConfigCollection);
+		}
+	}
+
+	private updatePandocPreviewBuildConfigAndSettings(previewBuildConfig: PandocPreviewBuildConfig | undefined) {
+		// `updatePandocConfigs()` guarantees that there is either a build
+		// config or a defaults reader.  It does not guarantee a writer when
+		// there is no build config, so an HTML fallback is used in that case.
+		// When `documentPandocDefaultsFile.data?.has<Reader|Writer>`,
+		// `documentPandocDefaultsFile.data.extracted<Reader|Writer>` will be
+		// either a string or `undefined`.  If `undefined`, then the
+		// reader/writer is in the defaults file and will be set there during
+		// build.
+		this.pandocPreviewBuildConfig = previewBuildConfig;
+
+		let reader: PandocReader | undefined;
+		let writer: PandocWriter | undefined;
+		let fileScope: boolean | undefined;
+
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.hasReader) {
+			reader = this.documentPandocDefaultsFile.data.extractedReader;
+		} else {
+			reader = previewBuildConfig?.reader;
+		}
+
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.hasWriter) {
+			writer = this.documentPandocDefaultsFile.data.extractedWriter;
+		} else if (previewBuildConfig) {
+			writer = previewBuildConfig.writer;
+		} else {
+			writer = fallbackHtmlWriter;
+		}
+
+		// Document defaults have precedence over settings defaults.  Options
+		// override everything.
+		if (previewBuildConfig && previewBuildConfig.defaultsFileScope !== undefined) {
+			fileScope = previewBuildConfig.defaultsFileScope;
+		}
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.fileScope !== undefined) {
+			fileScope = this.documentPandocDefaultsFile.data.fileScope;
+		}
+		if (previewBuildConfig && previewBuildConfig.optionsFileScope !== undefined) {
+			fileScope = previewBuildConfig.optionsFileScope;
+		}
+
+		if (fileScope && !reader?.canFileScope) {
+			const message = [];
+			if (reader) {
+				message.push(`The setting "file-scope" is not supported for the current input format "${reader.asPandocString}", so it will be ignored.`);
+			} else if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.hasReader) {
+				message.push(`The setting "file-scope" is not supported for the current input format "${this.documentPandocDefaultsFile.data?.rawReaderString}", so it will be ignored.`);
+			} else {
+				message.push(`The setting "file-scope" is not supported for the current input format, so it will be ignored.`);
+			}
+			message.push(
+				`This setting is only currently supported for built-in Pandoc formats ${Array.from(readersWithWrapper).join(', ')}.`,
+				`It is also supported for custom readers that have a "+file_scope" extension and are explicitly set to use that extension ("<reader>+file_scope").`
+			);
+			vscode.window.showErrorMessage(message.join(' '));
+			fileScope = false;
+		}
+
+		this.pandocPreviewOptions = {
+			reader: reader,
+			writer: writer,
+			fileScope: fileScope,
+		};
 		this.update();
 	}
 
-	onPandocPreviewDefaultsInvalidNotRelevant() {
-		this.fileNames = [this.currentFileName];
-		this.previousFileName = undefined;
-		this.fromFormat = this.extension.config.pandoc.fromFormat;
-		this.fileScope = false;
-		this.toFormat = 'html';
-		this.defaultsFileName = undefined;
+	private updatePandocPreviewBuildConfigAndSettingsQuickPick(buildConfigCollection: PandocBuildConfigCollection) {
+		if (this.pandocPreviewWriterQuickPick) {
+			this.pandocPreviewWriterQuickPick.dispose();
+		}
+		const quickPick = vscode.window.createQuickPick();
+		this.pandocPreviewWriterQuickPick = quickPick;
+		quickPick.title = 'Select preview format';
+		quickPick.ignoreFocusOut = true;
+		const pickItems: Array<{'label': string}> = [];
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.rawWriterString) {
+			const rawWriterString = this.documentPandocDefaultsFile.data.rawWriterString;
+			for (const [name, buildConfig] of buildConfigCollection.preview) {
+				if (name === rawWriterString || buildConfig.writer.asPandocString === rawWriterString) {
+					pickItems.push({label: name});
+				}
+			}
+		} else {
+			for (const name of buildConfigCollection.preview.keys()) {
+				pickItems.push({label: name});
+			}
+		}
+		quickPick.items = pickItems;
+		quickPick.onDidHide(() => {
+			if (this.pandocPreviewWriterQuickPick) {
+				const picked = pickItems[0].label;
+				this.pandocPreviewWriterQuickPick.dispose();
+				this.pandocPreviewWriterQuickPick = undefined;
+				const previewBuildConfig: PandocPreviewBuildConfig | undefined = buildConfigCollection?.preview.get(picked);
+				this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+			}
+		});
+		quickPick.onDidAccept(() => {
+			if (this.pandocPreviewWriterQuickPick) {
+				const picked = this.pandocPreviewWriterQuickPick.activeItems[0].label;
+				this.pandocPreviewWriterQuickPick.dispose();
+				this.pandocPreviewWriterQuickPick = undefined;
+				const previewBuildConfig: PandocPreviewBuildConfig | undefined = buildConfigCollection?.preview.get(picked);
+				this.updatePandocPreviewBuildConfigAndSettings(previewBuildConfig);
+			}
+		});
+		quickPick.show();
 	}
 
 	getMdPreviewExtHtmlStyleAttr() : string {
@@ -353,6 +597,10 @@ export default class PreviewPanel implements vscode.Disposable {
 			isNaN(mdPreviewExtConfig.lineHeight) ? '' : `--markdown-line-height: ${mdPreviewExtConfig.lineHeight};`,
 		].join(' ').replace(/"/g, '&quot;');
 		return styleAttr;
+	}
+
+	getContentSecurityNonce() : string {
+		return crypto.randomBytes(16).toString('base64');
 	}
 
 	getContentSecurityTag() : string {
@@ -419,6 +667,9 @@ export default class PreviewPanel implements vscode.Disposable {
 		{
 			// sha256 hash is for Pandoc KaTeX script
 			const scriptSrc: Array<string> = [`'sha256-67kRF6ir7uYcntligDJr9ckJ39fnGm98n5gLaDW7_a8='`];
+			if (this.usingContentSecurityNonce) {
+				scriptSrc.push(`'nonce-${this.contentSecurityNonce}'`);
+			}
 			contentSecurityOptions.set('script-src', scriptSrc);
 			if (security.allowInlineScripts) {
 				scriptSrc.push(`'unsafe-inline'`);
@@ -446,6 +697,13 @@ export default class PreviewPanel implements vscode.Disposable {
 		return contentSecurityTag;
 	}
 
+	resetContentSecurity() {
+		if (this.usingContentSecurityNonce) {
+			this.contentSecurityNonce = this.getContentSecurityNonce();
+		}
+		this.contentSecurityTag = this.getContentSecurityTag();
+	}
+
 	formatMessage(title: string, message: string) {
 		let htmlStyle: string;
 		if (this.extension.config.css.useMarkdownPreviewFontSettings) {
@@ -460,9 +718,10 @@ export default class PreviewPanel implements vscode.Disposable {
 	${this.baseTag}
 	${this.contentSecurityTag}
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<link rel="stylesheet" href="${this.resourceWebviewUris.vscodeCss}">
-	<link rel="stylesheet" href="${this.resourceWebviewUris.vscodeCodicon}">
-	<link rel="stylesheet" href="${this.resourceWebviewUris.codebraidCss}">
+	<link rel="stylesheet" href="${this.webviewResourceUris.vscodeCss}">
+	<link rel="stylesheet" href="${this.webviewResourceUris.vscodeCodicon}">
+	<link rel="stylesheet" href="${this.webviewResourceUris.codebraidCss}">
+	${this.codebraidPreviewJsTag}
 	<style>
 	body {
 		min-height: 100vh;
@@ -589,10 +848,8 @@ ${message}
 		if (!this.panel) {
 			return;
 		}
-		if (document.fileName === this.pandocPreviewDefaults.fileName) {
-			this.pandocPreviewDefaults.update().then(() => {
-				this.update();
-			});
+		if (document.fileName === this.documentPandocDefaultsFile.fileName) {
+			this.updateConfiguration();
 		}
 	}
 
@@ -605,7 +862,7 @@ ${message}
 		}
 		let document = event.textEditor.document;
 		if (document.uri.scheme === 'file' && document.fileName === this.currentFileName) {
-			if (!this.sourceSupportsScrollSync) {
+			if (!this.hasScrollSync) {
 				return;
 			}
 			if (this.extension.statusBarConfig.scrollPreviewWithEditor !== undefined) {
@@ -616,21 +873,17 @@ ${message}
 				return;
 			}
 			let startLine = event.visibleRanges[0].start.line + 1;  // Webview is one-indexed
-			if (this.scrollSyncMap) {
-				let fileStartEndLine = this.scrollSyncMap.get(document.fileName);
-				if (fileStartEndLine) {
-					startLine += fileStartEndLine[0] - 1;
-				} else {
-					return;
-				}
+			const fileStartEndLines = this.sourceMap.get(document.fileName);
+			if (fileStartEndLines) {
+				startLine += fileStartEndLines[0] - 1;
+			} else {
+				return;
 			}
-			startLine += this.scrollSyncOffset;
-			this.panel.webview.postMessage(
-				{
-					command: 'codebraidPreview.scrollPreview',
-					start: startLine,
-				}
-			);
+			startLine += this.sourceOffset;
+			this.panel.webview.postMessage({
+				command: 'codebraidPreview.scrollPreview',
+				startLine: startLine,
+			});
 		}
 	}
 
@@ -642,7 +895,7 @@ ${message}
 		if (this.isScrollingEditorWithPreview) {
 			return;
 		}
-		if (!this.sourceSupportsScrollSync) {
+		if (!this.hasScrollSync) {
 			return;
 		}
 		if (this.extension.statusBarConfig.scrollPreviewWithEditor !== undefined) {
@@ -653,21 +906,17 @@ ${message}
 			return;
 		}
 		let startLine = editor.visibleRanges[0].start.line + 1;  // Webview is one-indexed
-		if (this.scrollSyncMap) {
-			let fileStartEndLine = this.scrollSyncMap.get(editor.document.fileName);
-			if (fileStartEndLine) {
-				startLine += fileStartEndLine[0] - 1;
-			} else {
-				return;
-			}
+		const fileStartEndLines = this.sourceMap.get(editor.document.fileName);
+		if (fileStartEndLines) {
+			startLine += fileStartEndLines[0] - 1;
+		} else {
+			return;
 		}
-		startLine += this.scrollSyncOffset;
-		this.panel.webview.postMessage(
-			{
-				command: 'codebraidPreview.scrollPreview',
-				start: startLine,
-			}
-		);
+		startLine += this.sourceOffset;
+		this.panel.webview.postMessage({
+			command: 'codebraidPreview.scrollPreview',
+			startLine: startLine,
+		});
 	}
 
 	async onDidReceiveMessage(message: any) {
@@ -676,7 +925,7 @@ ${message}
 		}
 		switch (message.command) {
 			case 'codebraidPreview.scrollEditor': {
-				if (!this.visibleEditor || !this.sourceSupportsScrollSync) {
+				if (!this.visibleEditor || !this.hasScrollSync) {
 					return;
 				}
 				if (this.extension.statusBarConfig.scrollEditorWithPreview !== undefined) {
@@ -687,32 +936,31 @@ ${message}
 					return;
 				}
 				this.isScrollingEditorWithPreview = true;
-				let scrollStartLine: number = message.start - this.scrollSyncOffset;
-				if (this.scrollSyncMap) {
-					let scrollFileName = undefined;
-					for (const [fileName, [fileStartLine, fileEndLine]] of this.scrollSyncMap) {
-						if (fileStartLine <= scrollStartLine && scrollStartLine <= fileEndLine) {
-							scrollFileName = fileName;
-							scrollStartLine -= fileStartLine - 1;
-							break;
-						}
-					}
-					if (scrollFileName) {
-						let column = this.visibleEditor.viewColumn;
-						let document = await vscode.workspace.openTextDocument(scrollFileName);
-						let editor = await vscode.window.showTextDocument(document, column);
-						this.visibleEditor = editor;
+				// Preview line numbers are one-indexed
+				let scrollStartLine: number = message.startLine - this.sourceOffset - 1;
+				let scrollFileName: string | undefined = undefined;
+				for (const [fileName, [fileStartLine, fileEndLine]] of this.sourceMap) {
+					if (fileStartLine <= scrollStartLine && scrollStartLine <= fileEndLine) {
+						scrollFileName = fileName;
+						scrollStartLine -= fileStartLine - 1;
+						break;
 					}
 				}
+				if (!scrollFileName) {
+					return;
+				}
+				const viewColumn = this.visibleEditor.viewColumn;
+				const document = await vscode.workspace.openTextDocument(scrollFileName);
+				const editor = await vscode.window.showTextDocument(document, viewColumn, true);
+				this.visibleEditor = editor;
 				if (!this.panel) {
 					return;
 				}
-				scrollStartLine -= 1; // Webview is one-indexed
 				if (scrollStartLine < 0) {
 					return;
 				}
-				let range = new vscode.Range(scrollStartLine, 0, scrollStartLine, 0);
-				this.visibleEditor.revealRange(range, vscode.TextEditorRevealType.AtTop);
+				const range = new vscode.Range(scrollStartLine, 0, scrollStartLine, 0);
+				editor.revealRange(range, vscode.TextEditorRevealType.AtTop);
 				if (this.isScrollingEditorWithPreviewTimer !== undefined) {
 					clearTimeout(this.isScrollingEditorWithPreviewTimer);
 				}
@@ -730,13 +978,38 @@ ${message}
 					return;
 				}
 				this.isScrollingEditorWithPreview = true;
-				const cursorLine: number = message.start - 1;
-				const position = new vscode.Position(cursorLine, 0);
+				let cursorFileName: string | undefined;
+				// Preview line numbers are one-indexed
+				let cursorStartLine: number = message.startLine - this.sourceOffset - 1;
+				// Don't adjust column index from one-indexed, so that after
+				// rather than before character
+				const cursorColumn: number = message.startColumn ? message.startColumn : 0;
+				for (const [fileName, [fileStartLine, fileEndLine]] of this.sourceMap) {
+					if (fileStartLine <= cursorStartLine && cursorStartLine <= fileEndLine) {
+						cursorFileName = fileName;
+						cursorStartLine -= fileStartLine - 1;
+						break;
+					}
+				}
+				if (!cursorFileName) {
+					return;
+				}
+				const viewColumn = this.visibleEditor.viewColumn;
+				const document = await vscode.workspace.openTextDocument(cursorFileName);
+				if (!this.panel) {
+					return;
+				}
+				const editor = await vscode.window.showTextDocument(document, viewColumn);
+				this.visibleEditor = editor;
+				if (!this.panel) {
+					return;
+				}
+				const position = new vscode.Position(cursorStartLine, cursorColumn);
         		const selection = new vscode.Selection(position, position);
-        		this.visibleEditor.selection = selection;
-				const range = new vscode.Range(cursorLine, 0, cursorLine, 0);
-				this.visibleEditor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-				vscode.window.showTextDocument(this.visibleEditor.document, this.visibleEditor.viewColumn, false);
+        		editor.selection = selection;
+				const range = new vscode.Range(cursorStartLine, 0, cursorStartLine, 0);
+				editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+				editor.setDecorations(this.moveCursorTextDecoration, [range]);
 				if (this.isScrollingEditorWithPreviewTimer !== undefined) {
 					clearTimeout(this.isScrollingEditorWithPreviewTimer);
 				}
@@ -747,6 +1020,18 @@ ${message}
 					},
 					50
 				);
+				if (this.moveCursorTextDecorationTimer) {
+					// Clear the timer, but no need to clear the decorations
+					// because that happens automatically when the new
+					// decorations are set
+					clearTimeout(this.moveCursorTextDecorationTimer);
+				}
+				this.moveCursorTextDecorationTimer = setTimeout(
+					() => {
+						editor.setDecorations(this.moveCursorTextDecoration, []);
+						this.moveCursorTextDecorationTimer = undefined;
+					},
+					500);
 				return;
 			}
 		}
@@ -774,6 +1059,8 @@ ${message}
 		if (!this.panel) {
 			return;
 		}
+		this.isShowingUpdatingMessage = false;
+		this.isShowingErrorMessage = true;
 		this.panel.webview.html = this.formatMessage(
 			'Codebraid Preview',
 			[
@@ -787,11 +1074,21 @@ ${message}
 		);
 	}
 
+	showPreviewEmpty() {
+		if (!this.panel) {
+			return;
+		}
+		this.isShowingUpdatingMessage = false;
+		this.isShowingErrorMessage = true;
+		this.panel.webview.html = this.formatMessage('', '');
+	}
+
 	showPreviewHtml(html: string) {
 		if (!this.panel) {
 			return;
 		}
 		this.isShowingUpdatingMessage = false;
+		this.isShowingErrorMessage = false;
 		let match = /<head>[ \t\r\n]*<meta charset="[a-zA-Z0-9_-]+" +\/>[ \t\r]*\n/.exec(html);
 		if (html.indexOf(`<head>`) === match?.index) {
 			let htmlStart = html.slice(0, match.index);
@@ -807,6 +1104,7 @@ ${message}
 			].join('');
 			this.panel.webview.html = patchedHtml;
 		} else {
+			this.isShowingErrorMessage = true;
 			this.panel.webview.html = this.formatMessage(
 				'Codebraid Preview',
 				[
@@ -822,8 +1120,8 @@ ${message}
 	}
 
 
-	async getFileTexts(fileNames: Array<string>, fromFormatIsCommonmark: boolean | undefined) : Promise<Array<string> | undefined> {
-		let fileTexts: Array<string> = [];
+	async getSources(fileNames: Array<string>, reader?: PandocReader) : Promise<Sources | undefined> {
+		let sources: Sources = [];
 		for (let fileName of fileNames) {
 			let fileText: string;
 			try {
@@ -831,14 +1129,30 @@ ${message}
 				fileText = fileDocument.getText();
 			} catch {
 				if (!this.panel) {
-					return;
+					return undefined;
 				}
 				vscode.window.showErrorMessage(`Missing input file "${fileName}"`);
 				return undefined;
 			}
-			fileTexts.push(fileText);
-			if (!this.usingCodebraid && fromFormatIsCommonmark !== undefined) {
-				if (fromFormatIsCommonmark) {
+			const fileTextLines = countNewlines(fileText);
+			let endPaddingText: string = '';
+			let totalTextLines: number = fileTextLines;
+			if (fileText.slice(0, -2) !== '\n\n') {
+				if (fileText.slice(0, -1) === '\n') {
+					endPaddingText = '\n';
+					totalTextLines += 1;
+				} else {
+					endPaddingText = '\n\n';
+					totalTextLines += 2;
+				}
+			}
+			sources.push({
+				index: sources.length,
+				fileName: fileName, fileText: fileText, fileTextLines: fileTextLines,
+				endPaddingText: endPaddingText, totalTextLines: totalTextLines,
+			});
+			if (!this.usingCodebraid && reader?.canCodebraid) {
+				if (reader.isCommonmark) {
 					if (fileText.indexOf('.cb-') !== -1) {
 						this.usingCodebraid = true;
 					}
@@ -847,7 +1161,7 @@ ${message}
 				}
 			}
 		}
-		return fileTexts;
+		return sources;
 	}
 
 
@@ -973,21 +1287,21 @@ ${message}
 			vscode.window.showErrorMessage([
 				`Could not find codebraid executable.`,
 				`Code execution is disabled.`,
-				`Install from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+				`Install from https://pypi.org/project/codebraid/, ${minCodebraidVersionString}+.`,
 			].join(' '));
 		} else if (isCodebraidCompatible === null) {
 			this.codebraidCommand = null;
 			vscode.window.showErrorMessage([
 				`Codebraid executable failed to return version information.`,
 				`Code execution is disabled.`,
-				`Consider reinstalling from https://pypi.org/project/codebraid/, v${minCodebraidVersion}+.`,
+				`Consider reinstalling from https://pypi.org/project/codebraid/, ${minCodebraidVersionString}+.`,
 			].join(' '));
 		} else if (isCodebraidCompatible === false) {
 			this.codebraidCommand = null;
 			vscode.window.showErrorMessage([
 				`Codebraid executable is outdated and unsupported.`,
 				`Code execution is disabled.`,
-				`Upgrade to v${minCodebraidVersion}+ at https://pypi.org/project/codebraid/.`,
+				`Upgrade to ${minCodebraidVersionString}+ at https://pypi.org/project/codebraid/.`,
 			].join(' '));
 		} else {
 			if (this.codebraidCommand === undefined) {
@@ -1001,10 +1315,13 @@ ${message}
 	}
 
 
-	isFromFormatCommonMark(format: string) : boolean {
-		return /^(?:commonmark_x|commonmark|gfm)(?:$|[+-])/.test(format);
+	sourcesToJsonHeader(sources: Sources) : string {
+		const pandocSources: Array<{name: string, lines: number}> = [];
+		for (const source of sources) {
+			pandocSources.push({name: source.fileName, lines: source.totalTextLines});
+		}
+		return JSON.stringify({sources: pandocSources}) + '\n';
 	}
-
 
 	async update() {
 		if (!this.panel) {
@@ -1014,16 +1331,15 @@ ${message}
 			this.needsBuild = true;
 		}
 
-		if (this.buildIsScheduled || this.buildIsInProgress) {
+		if (this.updateTimer || this.isBuildInProgress || !this.pandocPreviewOptions) {
 			return;
 		}
 
 		if (!this.panel.visible) {
-			this.buildIsScheduled = true;
 			// There currently isn't an event for the webview becoming visible
-			setTimeout(
+			this.updateTimer = setTimeout(
 				() => {
-					this.buildIsScheduled = false;
+					this.updateTimer = undefined;
 					this.update();
 				},
 				this.extension.config.minBuildInterval
@@ -1033,10 +1349,9 @@ ${message}
 
 		let timeNow = Date.now();
 		if (this.lastBuildTime + this.extension.config.minBuildInterval > timeNow) {
-			this.buildIsScheduled = true;
-			setTimeout(
+			this.updateTimer = setTimeout(
 				() => {
-					this.buildIsScheduled = false;
+					this.updateTimer = undefined;
 					this.update();
 				},
 				this.lastBuildTime + this.extension.config.minBuildInterval - timeNow
@@ -1044,45 +1359,27 @@ ${message}
 			return;
 		}
 
-		if (!this.pandocPreviewDefaults.isValid) {
-			this.pandocPreviewDefaults.showErrorMessage();
-			return;
-		}
-		this.buildIsInProgress = true;
+		this.isBuildInProgress = true;
 		this.needsBuild = false;
 		this.lastBuildTime = timeNow;
 
-		// Collect all data that depends on config and preview defaults so
-		// that everything from here onward isn't affected by config or
-		// preview changes during await's.
-		const fileNames = this.fileNames;
-		let fromFormat = this.fromFormat;
-		const fileScope = this.fileScope;
-		const toFormat = this.toFormat;
-		const defaultsFileName = this.defaultsFileName;
-		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
-
-		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
-		this.sourceSupportsScrollSync = fromFormatIsCommonmark;
-		if (fromFormatIsCommonmark) {
-			fromFormat += '+sourcepos';
-		}
-
-		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, fromFormatIsCommonmark);
-		if (!maybeFileTexts) {
-			this.buildIsInProgress = false;
-			this.sourceSupportsScrollSync = false;
+		const maybeSources: Sources | undefined = await this.getSources(this.fileNames, this.pandocPreviewOptions.reader);
+		if (!this.panel || !maybeSources) {
+			this.isBuildInProgress = false;
 			return;
 		}
-		const fileTexts: Array<string> = maybeFileTexts;
+		const sources: Sources = maybeSources;
 
-
-		if (this.usingCodebraid && !this.didCheckInitialCodebraidCache && !this.codebraidIsInProgress) {
+		if (this.usingCodebraid && !this.didCheckInitialCodebraidCache && !this.isCodebraidInProgress) {
 			this.didCheckInitialCodebraidCache = true;
 			if (this.isShowingUpdatingMessage) {
 				this.showUpdatingMessage('running', 'waiting');
 			}
 			await this.runCodebraidNoExecute();
+			if (!this.panel) {
+				this.isBuildInProgress = false;
+				return;
+			}
 			if (this.isShowingUpdatingMessage) {
 				this.showUpdatingMessage('finished', 'running');
 			}
@@ -1092,15 +1389,19 @@ ${message}
 
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
-		if (fromFormatIsCommonmark && (defaultsFileName || normalizedConfigPandocOptions.length > 0)) {
-			args.push(...['--lua-filter', `"${this.resourcePaths.pandocSourcePosPreprocFilter}"`]);
-		}
 		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
 			args.push(...this.pandocCssArgs);
 		}
-		args.push(...normalizedConfigPandocOptions);
-		if (defaultsFileName) {
-			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		if (this.pandocPreviewBuildConfig?.defaultsFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${this.pandocPreviewBuildConfig.defaultsFileName}"`);
+		}
+		if (this.pandocPreviewBuildConfig?.options) {
+			args.push(...this.pandocPreviewBuildConfig.options);
+		}
+		if (this.documentPandocDefaultsFile.processedFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${this.documentPandocDefaultsFile.processedFileName}"`);
 		}
 		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
 			args.push(...this.pandocCssArgs);
@@ -1112,35 +1413,131 @@ ${message}
 		if (this.usingCodebraid) {
 			args.push(...this.pandocWithCodebraidOutputArgs);
 		}
-		if (fileScope) {
-			args.push('--file-scope');
+		// Reader and writer don't need quoting, since they are either builtin
+		// (`^[0-9a-z_+-]+$`) or are custom from `settings.json` (and thus
+		// require any quoting by the user).  Readers/writers in preview
+		// defaults file are only extracted and used here if they are builtin.
+		if (this.pandocPreviewOptions.reader) {
+			if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers) {
+				if (this.pandocPreviewOptions.fileScope && this.pandocPreviewOptions.reader.canFileScope && !this.pandocPreviewOptions.reader.hasExtensionsFileScope) {
+					// Any incompatibilities have already resulted in error
+					// messages during configuration update
+					args.push('--from', `${this.pandocPreviewOptions.reader.asArg}+file_scope`);
+				} else {
+					args.push('--from', this.pandocPreviewOptions.reader.asArg);
+				}
+			} else {
+				args.push('--from', this.pandocPreviewOptions.reader.asArgNoWrapper);
+			}
 		}
-		args.push(`--from=${fromFormat}`);
-		args.push(`--to=${toFormat}`);
+		if (this.pandocPreviewOptions.writer) {
+			args.push('--to', this.pandocPreviewOptions.writer.asArg);
+		}
+
+		// Store current scroll sync data in object, then swap out for new
+		// data once document is written to pandoc stdin and new data is
+		// calculated, and finally update preview panel once pandoc completes
+		const scrollSyncData: ScrollSyncData = {
+			offset: this.sourceOffset,
+			map: this.sourceMap,
+		};
 
 		let buildProcess = child_process.execFile(
 			executable,
 			args,
 			this.buildProcessOptions,
 			(error, stdout, stderr) => {
+				this.isBuildInProgress = false;
 				if (!this.panel) {
 					return;
 				}
-				if (error) {
-					this.showPreviewError(executable, error);
-					this.scrollSyncOffset = 0;
-					this.sourceSupportsScrollSync = false;
-				} else {
-					this.showPreviewHtml(stdout);
+				if (this.usingContentSecurityNonce) {
+					this.resetContentSecurity();
 				}
-				this.buildIsInProgress = false;
+				if (this.webviewTempAlerts) {
+					this.panel.webview.postMessage({command: 'codebraidPreview.clearTempAlerts'});
+					this.webviewTempAlerts = false;
+				}
+				this.sourceOffset = scrollSyncData.offset;
+				this.sourceMap = scrollSyncData.map;
+				if (error) {
+					let regex: RegExp;
+					if (this.pandocPreviewOptions?.reader?.hasWrapper) {
+						regex = /(?<=Error running Lua:\r?\n)Error at.+?(line.+?)(\d+)(.+?column.+?)(\d+).+?unexpected.+?(?=stack traceback:)/s;
+					} else {
+						regex = /Error at.+?(line.+?)(\d+)(.+?column.+?)(\d+).+?unexpected.+$/s;
+					}
+					let messageMatch = stderr.match(regex);
+					if (messageMatch) {
+						if (this.isShowingUpdatingMessage) {
+							this.showPreviewEmpty();
+						}
+						this.webviewTempAlerts = true;
+						let message: string;
+						const errorLine = Number(messageMatch[2]);
+						const errorColumn = Number(messageMatch[4]);
+						let errorFileName: string | undefined;
+						let errorFileLine: number | undefined;
+						for (const [fileName, [fileStartLine, fileEndLine]] of this.sourceMap) {
+							if (fileStartLine <= errorLine && errorLine <= fileEndLine) {
+								errorFileName = fileName;
+								errorFileLine = errorLine - fileStartLine + 1 - this.sourceOffset;
+								break;
+							}
+						}
+						if (errorFileName && errorFileLine) {
+							const linked = [
+								`<a href="#" class="codebraid-temp-alert-pos" data-codebraid-temp-alert-pos="${errorFileLine}:${errorColumn}">`,
+								this.convertStringToLiteralHtml(messageMatch[1]),
+								errorFileLine.toString(),
+								this.convertStringToLiteralHtml(messageMatch[3]),
+								errorColumn.toString(),
+								`</a>`
+							].join('');
+							const [messageBefore, messageAfter] = messageMatch[0].split(messageMatch.slice(1).join(''), 2);
+							message = [
+								this.sourceMap.size > 1 ? this.convertStringToLiteralHtml(`In "${path.basename(errorFileName)}":\n`) : '',
+								this.convertStringToLiteralHtml(messageBefore),
+								linked,
+								this.convertStringToLiteralHtml(messageAfter),
+							].join('');
+						} else {
+							message = this.convertStringToLiteralHtml(messageMatch[0]);
+						}
+						this.panel.webview.postMessage({
+							command: 'codebraidPreview.tempAlert',
+							tempAlert: `<pre data-codebraid-title="Parse error">${message}</pre>\n`,
+						});
+					} else {
+						this.hasScrollSync = false;
+						this.showPreviewError(executable, error);
+					}
+				} else {
+					// `showPreviewHtml()` changes `isShowing*` status, so
+					// must be wrapped in conditionals rather than being
+					// refactored outside
+					if ((this.isShowingUpdatingMessage || this.isShowingErrorMessage) && this.visibleEditor) {
+						this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
+						this.showPreviewHtml(stdout);
+						this.onDidChangePreviewEditor(this.visibleEditor);
+					} else {
+						this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
+						this.showPreviewHtml(stdout);
+					}
+				}
 				if (this.needsBuild) {
+					// This timer isn't tracked for disposal since it runs
+					// within the next event loop cycle and thus will quickly
+					// detect `dispose()`.
 					setTimeout(() => {this.update();}, 0);
 				}
 			}
 		);
 
-		this.scrollSyncOffset = 0;
+		if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers && this.pandocPreviewOptions.reader?.hasWrapper) {
+			buildProcess.stdin?.write(this.sourcesToJsonHeader(sources));
+		}
+		let nextSourceOffset: number = 0;
 		let includingCodebraidOutput: boolean;
 		if (this.usingCodebraid && (this.currentCodebraidOutput.size > 0 || this.oldCodebraidOutput.size > 0)) {
 			includingCodebraidOutput = true;
@@ -1151,10 +1548,10 @@ ${message}
 			let metadataStartList: Array<string> = [
 				`---`,
 				`codebraid_meta:`,
-				`  commonmark: ${fromFormatIsCommonmark}`,
-				`  running: ${this.codebraidIsInProgress}`,
+				`  commonmark: ${this.pandocPreviewOptions.reader?.isCommonmark || false}`,
+				`  running: ${this.isCodebraidInProgress}`,
 			];
-			if (this.codebraidIsInProgress && this.codebraidProcessingStatus.size > 0) {
+			if (this.isCodebraidInProgress && this.codebraidProcessingStatus.size > 0) {
 				metadataStartList.push(`  collection_processing:`);
 				for (const [k, v] of this.codebraidProcessingStatus) {
 					metadataStartList.push(`    "${k}": ${v}`);
@@ -1171,15 +1568,15 @@ ${message}
 			buildProcess.stdin?.write(metadataStart);
 			// Offset ignores `---` for now, since document could start with
 			// that sequence
-			this.scrollSyncOffset += countNewlines(metadataStart) - 1;
+			nextSourceOffset += countNewlines(metadataStart) - 1;
 			let keySet = new Set();
 			if (this.currentCodebraidOutput.size > 0) {
 				for (const [key, yamlArray] of this.currentCodebraidOutput) {
 					buildProcess.stdin?.write(`  "${key}":\n`);
-					this.scrollSyncOffset += 1;
+					nextSourceOffset += 1;
 					for (const yaml of yamlArray) {
 						buildProcess.stdin?.write(yaml);
-						this.scrollSyncOffset += countNewlines(yaml);
+						nextSourceOffset += countNewlines(yaml);
 					}
 					keySet.add(key);
 				}
@@ -1190,73 +1587,47 @@ ${message}
 						continue;
 					}
 					buildProcess.stdin?.write(`  "${key}":\n`);
-					this.scrollSyncOffset += 1;
+					nextSourceOffset += 1;
 					for (const yaml of yamlArray) {
 						buildProcess.stdin?.write(yaml);
-						this.scrollSyncOffset += countNewlines(yaml);
+						nextSourceOffset += countNewlines(yaml);
 					}
 				}
 			}
 		}
-		if (!this.sourceSupportsScrollSync || fileTexts.length === 1) {
-			this.scrollSyncMap = undefined;
-			for (const [fileIndex, fileText] of fileTexts.entries()) {
-				if (fileIndex === 0 && includingCodebraidOutput) {
-					if (yamlMetadataRegex.test(fileText)) {
-						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
-					} else {
-						buildProcess.stdin?.write('---\n\n');
-						// Offset start+end delim lines, and trailing blank
-						this.scrollSyncOffset += 3;
-						buildProcess.stdin?.write(fileText);
-					}
+		// Line numbers in webview are one-indexed
+		let startLine: number = 0;
+		let endLine: number = 0;
+		const nextSourceMap: Map<string, [number, number]> = new Map();
+		for (const source of sources) {
+			if (source.index === 0 && includingCodebraidOutput) {
+				if (yamlMetadataRegex.test(source.fileText)) {
+					buildProcess.stdin?.write(source.fileText.slice(source.fileText.indexOf('\n') + 1));
 				} else {
-					buildProcess.stdin?.write(fileText);
+					buildProcess.stdin?.write('---\n\n');
+					// Offset start+end delim lines, and trailing blank
+					nextSourceOffset += 3;
+					buildProcess.stdin?.write(source.fileText);
 				}
-				if (fileText.slice(0, -2) !== '\n\n') {
-					buildProcess.stdin?.write('\n\n');
-				}
+			} else {
+				buildProcess.stdin?.write(source.fileText);
 			}
-		} else {
-			// Line numbers in webview are one-indexed
-			let startLine: number = 0;
-			let endLine: number = 0;
-			let fileTextLines: number = 0;
-			this.scrollSyncMap = new Map();
-			this.scrollSyncMapMaxLine = 0;
-			for (const [fileIndex, fileText] of fileTexts.entries()) {
-				const fileName = fileNames[fileIndex];
-				if (fileIndex === 0 && includingCodebraidOutput) {
-					if (yamlMetadataRegex.test(fileText)) {
-						buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
-					} else {
-						buildProcess.stdin?.write('---\n\n');
-						// Offset start+end delim lines, and trailing blank
-						this.scrollSyncOffset += 3;
-						buildProcess.stdin?.write(fileText);
-					}
-				} else {
-					buildProcess.stdin?.write(fileText);
-				}
-				startLine = endLine + 1;
-				fileTextLines = countNewlines(fileText);
-				endLine = startLine + fileTextLines - 1;
-				if (fileText.slice(0, -2) !== '\n\n') {
-					fileTextLines += 2;
-					endLine += 2;
-					buildProcess.stdin?.write('\n\n');
-				}
-				if (!this.scrollSyncMap.has(fileName)) {
-					// For files included multiple times, use the first
-					// occurrence.  Possible future feature:  Track the
-					// location in the preview and try to use that information
-					// to determine which occurrence to use.
-					this.scrollSyncMap.set(fileName, [startLine, endLine]);
-				}
-				this.scrollSyncMapMaxLine = endLine;
+			if (source.endPaddingText) {
+				buildProcess.stdin?.write(source.endPaddingText);
+			}
+			startLine = endLine + 1;
+			endLine = startLine + source.totalTextLines - 1;
+			if (!nextSourceMap.has(source.fileName)) {
+				// For files included multiple times, use the first
+				// occurrence.  Possible future feature:  Track the
+				// location in the preview and try to use that information
+				// to determine which occurrence to use.
+				nextSourceMap.set(source.fileName, [startLine, endLine]);
 			}
 		}
 		buildProcess.stdin?.end();
+		scrollSyncData.offset = nextSourceOffset;
+		scrollSyncData.map = nextSourceMap;
 	}
 
 
@@ -1270,7 +1641,7 @@ ${message}
 			data = JSON.parse(dataStringTrimmed);
 		} catch {
 			this.extension.log(`Failed to process Codebraid output:\n${dataString}`);
-			this.codebraidHasMessageErrors = true;
+			this.hasCodebraidMessageErrors = true;
 			return;
 		}
 		if (data.message_type === 'index') {
@@ -1279,7 +1650,7 @@ ${message}
 			this.receiveCodebraidOutput(data);
 		} else {
 			this.extension.log(`Received unexpected, unsupported Codebraid output:\n${dataString}`);
-			this.codebraidHasMessageErrors = true;
+			this.hasCodebraidMessageErrors = true;
 		}
 	}
 
@@ -1336,7 +1707,7 @@ ${message}
 		let yamlArray = this.currentCodebraidOutput.get(key);
 		if (yamlArray === undefined) {
 			this.extension.log(`Unexpected Codebraid output for uninitialized "${key}"`);
-			this.codebraidHasMessageErrors = true;
+			this.hasCodebraidMessageErrors = true;
 			return;
 		}
 		// index is 1-based
@@ -1356,15 +1727,39 @@ ${message}
 	}
 
 	private async runCodebraid(noExecute: boolean) {
-		if (!this.panel || this.codebraidIsInProgress) {
+		if (!this.panel || this.isCodebraidInProgress) {
+			return;
+		}
+		if (!this.pandocPreviewOptions) {
+			vscode.window.showErrorMessage(
+				'Cannot run Codebraid while configuration is updating or is invalid'
+			);
+			return;
+		}
+		if (!this.pandocPreviewOptions?.reader?.canCodebraid) {
+			let message: string;
+			if (this.pandocPreviewOptions.reader) {
+				message = `Codebraid is not compatible with current input format "${this.pandocPreviewOptions.reader.asPandocString}"`;
+			} else if (this.documentPandocDefaultsFile.data?.rawReaderString) {
+				message = `Codebraid is not compatible with current input format "${this.documentPandocDefaultsFile.data.rawReaderString}"`;
+			} else {
+				message = `Codebraid is not compatible with current input format`;
+			}
+			vscode.window.showErrorMessage(message);
+			return;
+		}
+		if (this.isExporting) {
+			vscode.window.showErrorMessage(
+				'Cannot run Codebraid while document is exporting; try again when export completes'
+			);
 			return;
 		}
 
 		// Typically, this will already be detected and set automatically
 		// during file reading by searching for `.cb-` and `.cb.`
 		this.usingCodebraid = true;
-		this.codebraidIsInProgress = true;
-		this.codebraidHasMessageErrors = false;
+		this.isCodebraidInProgress = true;
+		this.hasCodebraidMessageErrors = false;
 		if (noExecute) {
 			this.extension.statusBarConfig.setCodebraidRunningNoExecute();
 		} else {
@@ -1374,57 +1769,25 @@ ${message}
 		await this.setCodebraidCommand();
 		if (!this.codebraidCommand || !this.panel) {
 			this.extension.statusBarConfig.setCodebraidWaiting();
-			this.codebraidIsInProgress = false;
-			return;
-		}
-
-		if (!this.pandocPreviewDefaults.isValid) {
-			this.extension.statusBarConfig.setCodebraidWaiting();
-			this.pandocPreviewDefaults.showErrorMessage();
-			this.codebraidIsInProgress = false;
+			this.isCodebraidInProgress = false;
 			return;
 		}
 
 		// Update preview to start any progress indicators, etc.
-		this.panel.webview.postMessage(
-			{
-				command: 'codebraidPreview.startingCodebraid',
-			}
-		);
+		this.panel.webview.postMessage({
+			command: 'codebraidPreview.startingCodebraid',
+		});
 
-		// Collect all data that depends on config and preview defaults so
-		// that everything from here onward isn't affected by config or
-		// preview changes during await's.
-		const fileNames = this.fileNames;
-		let fromFormat = this.fromFormat;
-		const fileScope = this.fileScope;
-		const toFormat = this.toFormat;
-		const defaultsFileName = this.defaultsFileName;
-		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
-
-		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
-		if (fromFormatIsCommonmark) {
-			fromFormat += '+sourcepos';
-		}
-
-		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, fromFormatIsCommonmark);
-		if (!maybeFileTexts) {
+		const maybeSources: Sources | undefined = await this.getSources(this.fileNames, this.pandocPreviewOptions.reader);
+		if (!this.panel || !maybeSources) {
 			this.extension.statusBarConfig.setCodebraidWaiting();
-			this.codebraidIsInProgress = false;
+			this.isCodebraidInProgress = false;
 			return;
 		}
-		const fileTexts: Array<string> = maybeFileTexts;
+		const sources: Sources = maybeSources;
 		const stdinOrigins: Array<{path: string, lines: number}> = [];
-		const stdinTexts: Array<string> = [];
-		for (const [index, fileText] of fileTexts.entries()) {
-			const fileName = fileNames[index];
-			let lineCount = countNewlines(fileText);
-			stdinTexts.push(fileText);
-			if (!fileText.endsWith('\n\n')) {
-				stdinTexts.push('\n\n');
-				lineCount += 2;
-			}
-			stdinOrigins.push({path: fileName, lines: lineCount});
+		for (const source of sources) {
+			stdinOrigins.push({path: source.fileName, lines: source.totalTextLines});
 		}
 
 		const executable: string = this.codebraidCommand[0];
@@ -1436,9 +1799,16 @@ ${message}
 		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
 			args.push(...this.pandocCssArgs);
 		}
-		args.push(...normalizedConfigPandocOptions);
-		if (defaultsFileName) {
-			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		if (this.pandocPreviewBuildConfig?.defaultsFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${this.pandocPreviewBuildConfig.defaultsFileName}"`);
+		}
+		if (this.pandocPreviewBuildConfig?.options) {
+			args.push(...this.pandocPreviewBuildConfig.options);
+		}
+		if (this.documentPandocDefaultsFile.processedFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${this.documentPandocDefaultsFile.processedFileName}"`);
 		}
 		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
 			args.push(...this.pandocCssArgs);
@@ -1446,11 +1816,16 @@ ${message}
 		// If Codebraid adds a --pre-filter or similar option, that would need
 		// to be handled here.
 		args.push(...this.pandocPreviewArgs);
-		if (fileScope) {
+		if (this.pandocPreviewOptions.reader) {
+			args.push('--from', this.pandocPreviewOptions.reader.asCodebraidArg);
+		}
+		if (this.pandocPreviewOptions.fileScope) {
+			// Codebraid is not currently operating with the new Lua wrappers
 			args.push('--file-scope');
 		}
-		args.push(`--from=${fromFormat}`);
-		args.push(`--to=${toFormat}`);
+		if (this.pandocPreviewOptions.writer) {
+			args.push('--to', this.pandocPreviewOptions.writer.asCodebraidArg);
+		}
 
 		this.oldCodebraidOutput = this.currentCodebraidOutput;
 		this.currentCodebraidOutput = new Map();
@@ -1491,8 +1866,11 @@ ${message}
 			});
 			codebraidProcess.stdin?.write(JSON.stringify({origins: stdinOrigins}));
 			codebraidProcess.stdin?.write('\n');
-			for (const stdinText of stdinTexts) {
-				codebraidProcess.stdin?.write(stdinText);
+			for (const source of sources) {
+				codebraidProcess.stdin?.write(source.fileText);
+				if (source.endPaddingText) {
+					codebraidProcess.stdin?.write(source.endPaddingText);
+				}
 			}
 			codebraidProcess.stdin?.end();
 		});
@@ -1520,66 +1898,282 @@ ${message}
 		}
 		this.extension.statusBarConfig.setCodebraidWaiting();
 		this.codebraidProcessingStatus.clear();
-		this.codebraidIsInProgress = false;
-		if (this.codebraidHasMessageErrors) {
+		this.isCodebraidInProgress = false;
+		if (this.hasCodebraidMessageErrors) {
 			vscode.window.showErrorMessage('Received unexpected or invalid output from Codebraid. See Output log for details.');
 		}
 		this.update();
 	}
 
 
-	async exportDocument(exportPath: string) {
-		// Collect all data that depends on config and preview defaults so
-		// that everything from here onward isn't affected by config or
-		// preview changes during await's.
-		const fileNames = this.fileNames;
-		const fromFormat = this.fromFormat;
-		const fileScope = this.fileScope;
-		const defaultsFileName = this.defaultsFileName;
-		const normalizedConfigPandocOptions = this.extension.normalizedConfigPandocOptions;
-
-		let maybeFileTexts: Array<string> | undefined = await this.getFileTexts(fileNames, undefined);
-		if (!maybeFileTexts) {
+	async export() {
+		if (!this.pandocPreviewOptions) {
+			vscode.window.showErrorMessage(
+				'Cannot export while configuration is updating or is invalid'
+			);
 			return;
 		}
-		const fileTexts: Array<string> = maybeFileTexts;
+		if (this.isCodebraidInProgress) {
+			vscode.window.showWarningMessage(
+				'Exporting while Codebraid is running can result in incomplete output in the exported document.'
+			);
+		}
+
+		this.isExporting = true;
+
+		const maybeSources: Sources | undefined = await this.getSources(this.fileNames);
+		if (!this.panel || !maybeSources) {
+			this.isExporting = false;
+			return;
+		}
+		const sources: Sources = maybeSources;
+
+		if (!this.pandocExportBuildConfigs || this.pandocExportBuildConfigs.size === 0) {
+			this.exportGetFileName(sources, undefined);
+			return;
+		}
+
+		if (this.pandocExportWriterQuickPick) {
+			this.pandocExportWriterQuickPick.dispose();
+		}
+		const quickPick = vscode.window.createQuickPick();
+		this.pandocExportWriterQuickPick = quickPick;
+		quickPick.title = 'Select Pandoc export format';
+		const pickItems: Array<{label: string, description?: string, kind?: vscode.QuickPickItemKind.Separator}> = [];
+		if (this.lastExportWriterName && this.pandocExportBuildConfigs.has(this.lastExportWriterName)) {
+			pickItems.push({label: 'most recent', kind: vscode.QuickPickItemKind.Separator});
+			pickItems.push({label: this.lastExportWriterName});
+		}
+		// If the "From file extension" label is selected, then
+		// `pandocExportBuildConfigs.get(<label>)` returns `undefined`.  So a
+		// writer is not defined and must be inferred by Pandoc.
+		pickItems.push({label: '', kind: vscode.QuickPickItemKind.Separator});
+		pickItems.push({label: 'From file extension', description: 'Pandoc determines export format from file extension'});
+		pickItems.push({label: 'user defined', kind: vscode.QuickPickItemKind.Separator});
+		for (const [key, buildConfig] of this.pandocExportBuildConfigs) {
+			if (buildConfig.isPredefined) {
+				continue;
+			}
+			pickItems.push({label: key});
+		}
+		if (pickItems.at(-1)?.kind) {
+			pickItems.pop();
+		}
+		pickItems.push({label: 'predefined', kind: vscode.QuickPickItemKind.Separator});
+		for (const [key, buildConfig] of this.pandocExportBuildConfigs) {
+			if (!buildConfig.isPredefined) {
+				continue;
+			}
+			pickItems.push({label: key});
+		}
+		if (pickItems.at(-1)?.kind) {
+			pickItems.pop();
+		}
+		quickPick.items = pickItems;
+		quickPick.onDidHide(() => {
+			if (this.pandocExportWriterQuickPick) {
+				this.pandocExportWriterQuickPick.dispose();
+				this.pandocExportWriterQuickPick = undefined;
+			}
+			this.isExporting = false;
+		});
+		quickPick.onDidAccept(() => {
+			if (this.pandocExportWriterQuickPick) {
+				const picked = this.pandocExportWriterQuickPick.activeItems[0].label;
+				this.pandocExportWriterQuickPick.dispose();
+				this.pandocExportWriterQuickPick = undefined;
+				const exportBuildConfig: PandocExportBuildConfig | undefined = this.pandocExportBuildConfigs?.get(picked);
+				this.exportGetFileName(sources, exportBuildConfig);
+			}
+		});
+		quickPick.show();
+	}
+
+	private async exportGetFileName(sources: Sources, pandocExportBuildConfig: PandocExportBuildConfig | undefined) {
+		let defaultExportFileNameNoExt: string | undefined;
+		if (this.lastExportFileNameNoExt) {
+			defaultExportFileNameNoExt = this.lastExportFileNameNoExt;
+		} else if (sources.length === 1) {
+			const fileName = sources[0].fileName;
+			if (fileName.endsWith(this.fileExtension.fullExtension)) {
+				defaultExportFileNameNoExt = fileName.slice(0, -this.fileExtension.fullExtension.length);
+			} else if (path.basename(fileName).lastIndexOf('.') !== -1) {
+				defaultExportFileNameNoExt = fileName.slice(0, fileName.lastIndexOf('.'));
+			}
+		}
+		let defaultExportUri: vscode.Uri | undefined;
+		if (defaultExportFileNameNoExt) {
+			defaultExportUri = vscode.Uri.file(defaultExportFileNameNoExt);
+		}
+		let defaultExportFileExtension: string | undefined;
+		if (pandocExportBuildConfig?.writer.builtinBase) {
+			defaultExportFileExtension = builtinToFileExtensionMap.get(pandocExportBuildConfig.writer.builtinBase);
+		}
+		if (!defaultExportFileExtension) {
+			defaultExportFileExtension = this.lastExportFileExtension;
+		}
+
+		let saveDialogFilter: {[key: string]: Array<string>};
+		let defaultFilterKey: string | undefined;
+		if (defaultExportFileExtension) {
+			defaultFilterKey = defaultSaveDialogFileExtensionToFilterKeyMap.get(defaultExportFileExtension);
+		}
+		if (!defaultFilterKey) {
+			saveDialogFilter = defaultSaveDialogFilter;
+		} else {
+			// Attempt to select the correct file extension by default, and
+			// put it at the top of the file-extension dropdown menu.
+			// `defaultSaveDialogFilter` and
+			// `defaultSaveDialogFileExtensionToFilterKeyMap` are created at
+			// the same time from the same data, so there is no mismatch
+			// between their contents.
+			saveDialogFilter = {};
+			saveDialogFilter[defaultFilterKey] = defaultSaveDialogFilter[defaultFilterKey];
+			for (const [key, value] of Object.entries(defaultSaveDialogFilter)) {
+				if (key !== defaultFilterKey) {
+					saveDialogFilter[key] = value;
+				}
+			}
+		}
+
+		let saveLabel: string;
+		if (pandocExportBuildConfig) {
+			saveLabel = `Pandoc export (format "${pandocExportBuildConfig.writer.name}")`;
+		} else {
+			saveLabel = 'Pandoc export (format from file extension)';
+		}
+		const exportUri: vscode.Uri | undefined = await vscode.window.showSaveDialog({
+			title: 'Pandoc export',
+			saveLabel: saveLabel,
+			defaultUri: defaultExportUri,
+			filters: saveDialogFilter,
+		});
+		if (!this.panel || !exportUri) {
+			this.isExporting = false;
+			return;
+		}
+		const exportFileName = exportUri.fsPath;
+		for (const source of sources) {
+			if (source.fileName === exportFileName) {
+				vscode.window.showErrorMessage(`Export cannot overwrite source file "${path.basename(source.fileName)}"`);
+				this.isExporting = false;
+				return;
+			}
+		}
+		if (/[\u0000-\u001F\u007F\u0080—\u009F*?"<>|$!%`^]|(?<!^[a-zA-z]):|:(?![\\/])|\\"/.test(exportFileName)) {
+			// Don't allow command characters, characters invalid in Windows
+			// file names, Windows CMD/PowerShell escapes, interpolation, or
+			// escaped double quotes.
+			vscode.window.showErrorMessage(`Cannot export file; invalid or unsupported file name: "${exportFileName}"`);
+			this.isExporting = false;
+			return;
+		}
+
+		this.exportPandoc(sources, pandocExportBuildConfig, exportFileName);
+	}
+
+	private exportPandoc(sources: Sources, pandocExportBuildConfig: PandocExportBuildConfig | undefined, exportFileName: string) {
+		const reader: PandocReader | undefined = this.pandocPreviewOptions?.reader;
+		// Writer is either from chosen build config or from file extension;
+		// any writer in document defaults file is ignored.
+		const writer: PandocWriter | undefined = pandocExportBuildConfig?.writer;
+		let fileScope: boolean = false;
+		// Document defaults have precedence over settings defaults.  Options
+		// override everything.
+		if (pandocExportBuildConfig && pandocExportBuildConfig.defaultsFileScope !== undefined) {
+			fileScope = pandocExportBuildConfig.defaultsFileScope;
+		}
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.fileScope !== undefined) {
+			fileScope = this.documentPandocDefaultsFile.data.fileScope;
+		}
+		if (pandocExportBuildConfig && pandocExportBuildConfig.optionsFileScope !== undefined) {
+			fileScope = pandocExportBuildConfig.optionsFileScope;
+		}
 
 		const executable: string = 'pandoc';
 		const args: Array<string> = [];
-		if (defaultsFileName) {
-			args.push(...['--defaults', `"${defaultsFileName}"`]);
+		if (pandocExportBuildConfig?.defaultsFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${pandocExportBuildConfig.defaultsFileName}"`);
 		}
-		args.push(...normalizedConfigPandocOptions);
+		if (pandocExportBuildConfig?.options) {
+			args.push(...pandocExportBuildConfig.options);
+		}
+		if (this.documentPandocDefaultsFile.processedFileName) {
+			// This needs quoting, since it involves an absolute path
+			args.push('--defaults', `"${this.documentPandocDefaultsFile.processedFileName}"`);
+		}
 		args.push(...this.pandocExportArgs);
 		if (this.usingCodebraid) {
 			args.push(...this.pandocWithCodebraidOutputArgs);
 		}
-		if (fileScope) {
-			args.push('--file-scope');
+		// Reader and writer don't need quoting, since they are either builtin
+		// (`^[0-9a-z_+-]+$`) or are custom from `settings.json` (and thus
+		// require any quoting by the user).  Readers/writers in preview
+		// defaults file are only extracted and used here if they are builtin.
+		if (reader) {
+			if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers) {
+				if (fileScope && reader.canFileScope && !reader.hasExtensionsFileScope) {
+					// Any incompatibilities have already resulted in error
+					// messages during configuration update
+					args.push('--from', `${reader.asArg}+file_scope`);
+				} else {
+					args.push('--from', reader.asArg);
+				}
+			} else {
+				args.push('--from', reader.asArgNoWrapper);
+			}
 		}
-		args.push(`--from=${fromFormat}`);
-		// Save dialog requires confirmation of overwrite
-		args.push(...['--output', `"${exportPath}"`]);
+		if (writer) {
+			// If a writer isn't specified, Pandoc may still be able to
+			// proceed based on file extension of output; otherwise, it will
+			// give an error
+			args.push('--to', writer.asArg);
+		}
+		args.push('--output', `"${exportFileName}"`);
 
 		this.extension.statusBarConfig.setDocumentExportRunning();
-		let buildProcess = child_process.execFile(
+		const buildProcess = child_process.execFile(
 			executable,
 			args,
 			this.buildProcessOptions,
 			(error, stdout, stderr) => {
+				this.extension.statusBarConfig.setDocumentExportWaiting();
+				this.isExporting = false;
 				if (!this.panel) {
 					return;
 				}
-				this.extension.statusBarConfig.setDocumentExportWaiting();
 				if (error) {
 					vscode.window.showErrorMessage(`Pandoc export failed: ${error}`);
+					this.extension.log(`Pandoc export failed: ${error}`);
 				} else if (stderr) {
-					vscode.window.showErrorMessage(`Pandoc export stderr: ${stderr}`);
+					if (stderr.toLowerCase().indexOf('error') !== -1) {
+						vscode.window.showErrorMessage(`Pandoc export stderr: ${stderr}`);
+					} else if (stderr.toLowerCase().indexOf('warning') !== -1){
+						vscode.window.showWarningMessage(`Pandoc export stderr: ${stderr}`);
+					} else {
+						vscode.window.showInformationMessage(`Pandoc export stderr: ${stderr}`);
+					}
+					this.extension.log(`Pandoc export stderr: ${stderr}`);
+				}
+				if (!error) {
+					if (path.basename(exportFileName).lastIndexOf('.') !== -1) {
+						const extIndex = exportFileName.lastIndexOf('.');
+						this.lastExportFileNameNoExt = exportFileName.slice(0, extIndex);
+						this.lastExportFileExtension = exportFileName.slice(extIndex);
+						this.lastExportWriterName = writer?.name;
+					} else {
+						this.lastExportFileNameNoExt = exportFileName;
+						this.lastExportFileExtension = undefined;
+						this.lastExportWriterName = writer?.name;
+					}
 				}
 			}
 		);
 
-		let fromFormatIsCommonmark: boolean = this.isFromFormatCommonMark(fromFormat);
+		if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers && reader?.hasWrapper) {
+			buildProcess.stdin?.write(this.sourcesToJsonHeader(sources));
+		}
 		let includingCodebraidOutput: boolean;
 		if (this.usingCodebraid && (this.currentCodebraidOutput.size > 0 || this.oldCodebraidOutput.size > 0)) {
 			includingCodebraidOutput = true;
@@ -1590,7 +2184,7 @@ ${message}
 			buildProcess.stdin?.write([
 				`---`,
 				`codebraid_meta:`,
-				`  commonmark: ${fromFormatIsCommonmark}`,
+				`  commonmark: ${reader?.isCommonmark || false}`,
 				`codebraid_output:\n`,
 			].join('\n'));
 			let keySet = new Set();
@@ -1615,19 +2209,19 @@ ${message}
 				}
 			}
 		}
-		for (const [fileIndex, fileText] of fileTexts.entries()) {
-			if (fileIndex === 0 && includingCodebraidOutput) {
-				if (yamlMetadataRegex.test(fileText)) {
-					buildProcess.stdin?.write(fileText.slice(fileText.indexOf('\n')+1));
+		for (const source of sources) {
+			if (source.index === 0 && includingCodebraidOutput) {
+				if (yamlMetadataRegex.test(source.fileText)) {
+					buildProcess.stdin?.write(source.fileText.slice(source.fileText.indexOf('\n') + 1));
 				} else {
 					buildProcess.stdin?.write('---\n\n');
-					buildProcess.stdin?.write(fileText);
+					buildProcess.stdin?.write(source.fileText);
 				}
 			} else {
-				buildProcess.stdin?.write(fileText);
+				buildProcess.stdin?.write(source.fileText);
 			}
-			if (fileText.slice(0, -2) !== '\n\n') {
-				buildProcess.stdin?.write('\n\n');
+			if (source.endPaddingText) {
+				buildProcess.stdin?.write(source.endPaddingText);
 			}
 		}
 		buildProcess.stdin?.end();

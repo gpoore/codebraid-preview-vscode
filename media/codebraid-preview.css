@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------*
-Copyright (c) 2022, Geoffrey M. Poore
+Copyright (c) 2022-2023, Geoffrey M. Poore
 All rights reserved.
 
 Licensed under the BSD 3-Clause License:
@@ -278,4 +278,41 @@ span.pandoc-raw::before {
     padding-inline: 4px;
     padding-top: 2px;
     padding-bottom: 2px;
+}
+
+
+
+
+/* Short-term alert messages, such as syntax errors ------------------------*/
+div.codebraid-temp-alert {
+    position: fixed;
+    z-index:100;
+    bottom: 1em;
+    right: 1em;
+    border: 1px solid red;
+}
+.vscode-light div.codebraid-temp-alert {
+    background-color: rgba(220, 220, 220, 1);
+    outline: 3px solid rgba(220, 220, 220, 0.4);
+}
+.vscode-dark div.codebraid-temp-alert {
+    background-color: rgba(10, 10, 10, 1);
+    outline: 3px solid rgba(10, 10, 10, 0.4);
+}
+.vscode-high-contrast div.codebraid-temp-alert {
+    background-color: var(--vscode-textCodeBlock-background);
+    outline: 3px solid var(--vscode-textCodeBlock-background);
+}
+div.codebraid-temp-alert pre {
+    margin: 0;
+}
+div.codebraid-temp-alert pre::before {
+    content: attr(data-codebraid-title);
+    color: red;
+    display: block;
+    font-size: large;
+    font-weight: 800;
+    font-family: sans-serif;
+    border-bottom: 1px solid red;
+    margin-bottom: 1em;
 }

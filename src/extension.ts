@@ -1,4 +1,4 @@
-// Copyright (c) 2022, Geoffrey M. Poore
+// Copyright (c) 2022-2023, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -8,26 +8,23 @@
 
 import * as vscode from 'vscode';
 
-import * as os from 'os';
-import * as process from 'process';
-
-import PreviewPanel from './preview_panel';
 import type { ExtensionState } from './types';
+import { isWindows, homedir } from './constants';
+import { resourceRoots } from './resources';
+import { FileExtension } from './util';
+import { PandocVersionInfo, getPandocVersionInfo } from './pandoc_version_info';
+import { PandocBuildConfigCollections } from './pandoc_build_configs';
+import PreviewPanel from './preview_panel';
 
-
-const resourceRoots: Array<string> =  [
-	'media',
-	'scripts',
-	'node_modules/katex/dist',
-	'node_modules/@vscode/codicons/dist',
-]
-const supportedFileExtensions: Array<string> = ['.md', '.markdown', '.cbmd'];
-
-const homedir = os.homedir();
-const isWindows = process.platform === 'win32';
 
 let context: vscode.ExtensionContext;
+let pandocVersionInfo: PandocVersionInfo;
 const previews: Set<PreviewPanel> = new Set();
+function updatePreviewConfigurations() {
+	for (const preview of previews) {
+		preview.updateConfiguration();
+	}
+}
 let extensionState: ExtensionState;
 const oldExtraLocalResourceRoots: Set<string> = new Set();
 let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
@@ -35,8 +32,14 @@ let checkPreviewVisibleInterval: NodeJS.Timeout | undefined;
 
 
 
-export function activate(extensionContext: vscode.ExtensionContext) {
+export async function activate(extensionContext: vscode.ExtensionContext) {
 	context = extensionContext;
+
+	// Check Pandoc version here, since async, but don't give any
+	// errors/warnings about compatibility until the extension is actually
+	// used.  Simply loading the extension in the background won't result in
+	// errors/warnings.
+	pandocVersionInfo = await getPandocVersionInfo();
 
 	const outputChannel = vscode.window.createOutputChannel('Codebraid Preview');
 	context.subscriptions.push(outputChannel);
@@ -91,12 +94,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		11
 	);
 
-	let config = vscode.workspace.getConfiguration('codebraid.preview');
+	const config = vscode.workspace.getConfiguration('codebraid.preview');
+	const pandocBuildConfigCollections = new PandocBuildConfigCollections(context);
+	context.subscriptions.push(pandocBuildConfigCollections);
+	await pandocBuildConfigCollections.update(config);
 	extensionState = {
 		isWindows: isWindows,
 		context: context,
 		config: config,
-		normalizedConfigPandocOptions: normalizePandocOptions(config),
+		pandocVersionInfo: pandocVersionInfo,
+		pandocBuildConfigCollections: pandocBuildConfigCollections,
 		normalizedExtraLocalResourceRoots: normalizeExtraLocalResourceRoots(config),
 		resourceRootUris: resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root))),
 		log: log,
@@ -114,7 +121,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 			setCodebraidWaiting: () => {runCodebraidStatusBarItem.text = '$(run-all) Codebraid';},
 			setDocumentExportRunning: () => {exportDocumentStatusBarItem.text = '$(sync~spin) Pandoc';},
 			setDocumentExportWaiting: () => {exportDocumentStatusBarItem.text = '$(export) Pandoc';},
-		}
+		},
 	};
 
 	openPreviewStatusBarItem.name = 'Codebraid Preview: open preview';
@@ -149,11 +156,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	vscode.workspace.onDidChangeConfiguration(
 		() => {
 			extensionState.config = vscode.workspace.getConfiguration('codebraid.preview');
-			extensionState.normalizedConfigPandocOptions = normalizePandocOptions(extensionState.config);
 			extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
-			for (const preview of previews) {
-				preview.updateConfiguration();
-			}
+			extensionState.pandocBuildConfigCollections.update(extensionState.config, updatePreviewConfigurations);
 		},
 		null,
 		context.subscriptions
@@ -201,35 +205,6 @@ export function deactivate() {
 }
 
 
-// This is a copy of package.json: codebraid.preview.pandoc.options.items.pattern
-// with capture groups added.
-const optionValidateRegex = new RegExp(
-	"^(?!-f|--from|-r|--read)(-[a-zA-Z]|--[a-zA-Z]+(?:-[a-zA-Z]+)*)(?:([ =])(\"[^\"]+\"(?!\")|'[^']+'|[^ \"';&|]+(?=[\"']|$))+)?$"
-);
-function normalizePandocOptions(config: vscode.WorkspaceConfiguration) : Array<string> {
-	// Validate options from config.pandoc.options.  Under Windows, perform
-	// expansion of ~ to home directory.  That isn't needed under other
-	// operating systems since commands are executed via the shell.
-	const normalizedOptions: Array<string> = [];
-	for (const option of config.pandoc.options) {
-		const match: Array<string> | null = option.match(optionValidateRegex);
-		if (!match) {
-			vscode.window.showErrorMessage(`Invalid setting in codebraid.preview.pandoc.options:  ${option}`);
-			return [];
-		}
-		if (!isWindows || !match[3] || !(match[3].startsWith('~/') || match[3].startsWith('~\\'))) {
-			normalizedOptions.push(option);
-			continue;
-		}
-		const opt = match[1];
-		const sep = match[2];
-		const val = `"${homedir}"${match[3].slice(1)}`;
-		normalizedOptions.push(`${opt}${sep}${val}`);
-	}
-	return normalizedOptions;
-}
-
-
 function normalizeExtraLocalResourceRoots(config: vscode.WorkspaceConfiguration): Array<string> {
 	if (previews.size > 0) {
 		let didChangeExtraRoots: boolean = false;
@@ -264,20 +239,73 @@ function normalizeExtraLocalResourceRoots(config: vscode.WorkspaceConfiguration)
 }
 
 
-function fileExtensionIsSupported(fileName: string): boolean {
-	for (const ext of supportedFileExtensions) {
-		if (fileName.endsWith(ext)) {
-			return true;
-		}
+function showPandocMissingError() {
+	getPandocVersionInfo().then((result) => {
+		pandocVersionInfo = result;
+		extensionState.pandocVersionInfo = result;
+	});
+	let message: string;
+	if (pandocVersionInfo === undefined) {
+		message = [
+			'Could not find pandoc.',
+			'Make sure that it is installed and on PATH.',
+			'If you have just installed pandoc, wait a moment and try again.',
+			'Or manually reload the extension: restart, or CTRL+SHIFT+P and then run "Reload Window".',
+		].join(' ');
+	} else {
+		message = [
+			'Failed to identify pandoc version; possibly invalid or corrupted executable.',
+			'Make sure that it is installed and on PATH.',
+			'If you have just installed pandoc, wait a moment and try again.',
+			'Or manually reload the extension: restart, or CTRL+SHIFT+P and then run "Reload Window".',
+		].join(' ');
 	}
-	return false;
+	vscode.window.showErrorMessage(message);
+}
+
+let didShowPandocVersionMessage: boolean = false;
+function showPandocVersionMessage() {
+	if (didShowPandocVersionMessage) {
+		return;
+	}
+	didShowPandocVersionMessage = true;
+	const oldVersionString = pandocVersionInfo?.versionString;
+	getPandocVersionInfo().then((result) => {
+		if (result?.versionString !== oldVersionString) {
+			didShowPandocVersionMessage = false;
+		}
+		pandocVersionInfo = result;
+		extensionState.pandocVersionInfo = result;
+	});
+	let messageArray: Array<string> = [];
+	if (!pandocVersionInfo?.isMinVersionRecommended) {
+		messageArray.push(
+			`Pandoc ${pandocVersionInfo?.versionString} is installed, but ${pandocVersionInfo?.minVersionRecommendedString}+ is recommended.`,
+		);
+		if (!pandocVersionInfo?.supportsCodebraidWrappers) {
+			messageArray.push(
+				`Scroll sync will only work for formats commonmark, commonmark_x, and gfm.`,
+				`It will not work for other Markdown variants, or for other formats like Org, LaTeX, and reStructuredText.`,
+				`The file scope option (command-line "--file-scope", or defaults "file-scope") is not supported.`,
+			);
+		}
+		vscode.window.showWarningMessage(messageArray.join(' '));
+	}
 }
 
 
 function startPreview() {
-	let editor = undefined;
-	let activeOrVisibleEditors = [];
-	if (vscode.window.activeTextEditor) {
+	if (!pandocVersionInfo) {
+		showPandocMissingError();
+		return;
+	}
+	if (!pandocVersionInfo.isMinVersionRecommended) {
+		showPandocVersionMessage();
+	}
+
+	let editor: vscode.TextEditor | undefined = undefined;
+	let activeOrVisibleEditors: Array<vscode.TextEditor> = [];
+	if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
 		activeOrVisibleEditors.push(vscode.window.activeTextEditor);
 	} else {
 		activeOrVisibleEditors.push(...vscode.window.visibleTextEditors);
@@ -297,16 +325,18 @@ function startPreview() {
 			if (activeOrVisibleEditors.length === 1) {
 				vscode.window.showErrorMessage([
 					`Unsupported URI scheme "${possibleEditor.document.uri.scheme}":`,
-					`Codebraid Preview only supports file URIs)`,
+					`Codebraid Preview only supports file URIs`,
 				].join(' '));
 				return;
 			}
 			continue;
 		}
-		if (!fileExtensionIsSupported(possibleEditor.document.fileName)) {
+		const fileExt = new FileExtension(possibleEditor.document.fileName);
+		if (!extensionState.pandocBuildConfigCollections.hasAnyConfigCollection(fileExt)) {
 			if (activeOrVisibleEditors.length === 1) {
+				const fileExtensions = Array.from(extensionState.pandocBuildConfigCollections.allInputFileExtensions()).join(', ');
 				vscode.window.showErrorMessage(
-					`Preview currently only supports file extensions ${supportedFileExtensions.join(', ')}`
+					`Preview currently only supports file extensions ${fileExtensions}.  Modify "pandoc.build" in settings to add more.`
 				);
 				return;
 			}
@@ -319,7 +349,6 @@ function startPreview() {
 			return;
 		}
 		editor = possibleEditor;
-		break;
 	}
 	if (!editor) {
 		vscode.window.showErrorMessage('No open and visible files support preview');
@@ -337,11 +366,27 @@ function startPreview() {
 	} else {
 		if (previews.size === extensionState.config.maxPreviews) {
 			vscode.window.showErrorMessage(
-				'Too many previews are already open; close one or change "maxPreviews" in configuration'
+				'Too many previews are already open; close one or change "maxPreviews" in settings'
 			);
 			return;
 		}
-		let preview = new PreviewPanel(editor, extensionState);
+		const fileExt = new FileExtension(editor.document.fileName);
+		let configCollection = extensionState.pandocBuildConfigCollections.getConfigCollection(fileExt);
+		if (!configCollection) {
+			configCollection = extensionState.pandocBuildConfigCollections.getFallbackConfigCollection(fileExt);
+			if (configCollection) {
+				vscode.window.showErrorMessage(
+					`"pandoc.build" settings for ${fileExt} are missing or invalid; default fallback preview settings will be used`,
+				);
+			} else {
+				const fileExtensions = Array.from(extensionState.pandocBuildConfigCollections.allInputFileExtensions()).join(', ');
+				vscode.window.showErrorMessage(
+					`Preview currently only supports file extensions ${fileExtensions}.  Modify "pandoc.build" in settings to add more.`
+				);
+				return;
+			}
+		}
+		let preview = new PreviewPanel(editor, extensionState, fileExt);
 		context.subscriptions.push(preview);
 		previews.add(preview);
 		preview.registerOnDisposeCallback(
@@ -358,6 +403,14 @@ function startPreview() {
 
 
 function runCodebraid() {
+	if (!pandocVersionInfo) {
+		showPandocMissingError();
+		return;
+	}
+	if (!pandocVersionInfo.isMinVersionRecommended) {
+		showPandocVersionMessage();
+	}
+
 	if (previews.size === 0) {
 		startPreview();
 	}
@@ -377,6 +430,14 @@ function runCodebraid() {
 
 
 function exportDocument() {
+	if (!pandocVersionInfo) {
+		showPandocMissingError();
+		return;
+	}
+	if (!pandocVersionInfo.isMinVersionRecommended) {
+		showPandocVersionMessage();
+	}
+
 	if (previews.size === 0) {
 		startPreview();
 	}
@@ -394,20 +455,7 @@ function exportDocument() {
 	if (!preview) {
 		return;
 	}
-	vscode.window.showSaveDialog({title: 'Pandoc export', saveLabel: 'Pandoc export'}).then((saveUri) => {
-		if (!preview || !saveUri) {
-			return;
-		}
-		let savePath = saveUri.fsPath;
-		if (/[\u0000-\u001F\u007F\u0080—\u009F*?"<>|$`!%]|(?<!^[a-zA-z]):|:(?![\\/])/.test(savePath)) {
-			// Don't allow command characters, characters invalid in Windows
-			// file names, or characters that cause interpolation when
-			// double-quoted in Linux shells.
-			vscode.window.showErrorMessage(`Cannot export file; invalid or unsupported file name: "${savePath}"`);
-			return;
-		}
-		preview.exportDocument(savePath);
-	});
+	preview.export();
 }
 
 
@@ -464,7 +512,7 @@ function updateStatusBarItems() {
 		let previewEditorsCount = 0;
 		for (const visibleEditor of vscode.window.visibleTextEditors) {
 			const document = visibleEditor.document;
-			if (document.uri.scheme === 'file' && fileExtensionIsSupported(document.fileName)) {
+			if (document.uri.scheme === 'file' && extensionState.pandocBuildConfigCollections.hasAnyConfigCollection(new FileExtension(document.fileName))) {
 				visibleEditorsCount += 1;
 				for (const preview of previews) {
 					if (preview.panel && preview.fileNames.indexOf(document.fileName) !== -1) {

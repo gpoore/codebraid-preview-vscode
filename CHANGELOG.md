@@ -1,6 +1,80 @@
 # Change Log
 
 
+# v0.13.0 (dev)
+
+* Pandoc 3.1.1 is now the minimum recommended version.  The Pandoc version is
+  now checked when the extension loads, and there are warnings for older
+  Pandoc versions that do not support all features.
+
+* Added preview support (including scroll sync) for additional Pandoc input
+  formats: `latex`, `org`, `rst`, and `textile`.  The preview displays any
+  parse errors with a link that jumps to the corresponding source location,
+  which is particularly useful for LaTeX.
+
+* Added scroll sync support for Markdown variants that are not based on
+  CommonMark:  `markdown`, `markdown_mmd`, `markdown_phpextra`, and
+  `markdown_strict`.  Previously, scroll sync was restricted to `commonmark`,
+  `commonmark_x`, and `gfm`.
+
+* The preview is now compatible with any text-based document format supported
+  by Pandoc (including custom Lua readers).  Scroll sync is now possible for
+  any text-based format, regardless of whether Pandoc provides a `sourcepos`
+  extension.  Scroll sync is automatically supported for all Markdown variants
+  plus `latex`, `org`, `rst`, and `textile`.  Code execution via Codebraid is
+  still currently limited to formats based on Markdown.
+
+  For formats not based on CommonMark, scroll sync is enabled with the new
+  library `sourceposlib.lua`.  This uses the AST produced by Pandoc and the
+  document source to reconstruct a mapping between input and output.  It
+  produces `sourcepos`-style data for arbitrary text-based document formats.
+  In some cases, scroll sync may be slightly inaccurate due to the complexity
+  of reconstructing a source map after parsing.  Scroll sync functionality
+  will be degraded for documents primarily consisting of emoji or other code
+  points outside the Basic Multilingual Plane (BMP), as well as for documents
+  primarily consisting of punctuation and symbol code points.  Tables with
+  multi-line cells and footnotes can also interfere with scroll sync under
+  some circumstances.
+
+  Support for additional input formats can be added by defining them in the
+  new setting `codebraid.preview.pandoc.build`.  Scroll sync can be enabled
+  for additional formats by creating a very short Lua reader that wraps the
+  existing reader.  See `scripts/pandoc/readers` for example Lua wrapper
+  scripts; see `scripts/pandoc/lib/readerlib.lua` and
+  `scripts/pandoc/lib/sourceposlib.lua` for additional documentation.
+
+* Document export now provides several default choices for export formats,
+  instead of simply allowing Pandoc to guess export format based on file
+  extension.  Additional export formats can be defined under the new
+  setting `codebraid.preview.pandoc.build`.
+
+* The preview now supports `--file-scope` for all Markdown variants, plus
+  `latex`, `org`, `rst`, and `textile`.  This is enabled with the new Lua
+  reader library `readerlib.lua`.  Previously, `--file-scope` was ignored in
+  generating the preview.
+
+* Reorganized settings to account for input formats that are not based on
+  Markdown.  `codebraid.preview.pandoc.fromFormat` and
+  `codebraid.preview.pandoc.options` are deprecated.  They are replaced by
+  `codebraid.preview.pandoc.build`, under property `*.md`.
+  `codebraid.preview.pandoc.build` allows each input format to define multiple
+  preview formats and multiple export formats.  Each preview/export format can
+  define command-line options and also defaults that are saved to a Pandoc
+  defaults file.
+
+* Setting `codebraid.preview.pandoc.previewDefaultsFile` is deprecated and
+  replaced with `codebraid.preview.pandoc.defaultsFile`.  This makes it
+  clearer that the defaults file is used for both preview and export.
+
+* Fixed a bug that prevented a preview from starting when a document is open,
+  but the Panel was clicked more recently than the document.
+
+* Reimplemented configuration processing and updating.  Modifying
+  configuration during preview update, Codebraid execution, or document export
+  no longer has the potential to result in inconsistent state.
+
+
+
 ## v0.12.0 (2023-01-19)
 
 * Pandoc 3.0 compatibility:  Updated Lua filters by replacing `pandoc.Null()`

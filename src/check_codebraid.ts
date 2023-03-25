@@ -8,12 +8,11 @@
 
 import * as child_process from 'child_process';
 
+import { VersionArray, versionIsAtLeast, versionToString } from './util';
 
-const minVersion: [number, number, number] = [0, 10, 3];
-const minMajor = minVersion[0];
-const minMinor = minVersion[1];
-const minPatch = minVersion[2];
-export const minCodebraidVersion: string = `${minMajor}.${minMinor}.${minPatch}`;
+
+const minCodebraidVersion: VersionArray = [0, 10, 3];
+export const minCodebraidVersionString = versionToString(minCodebraidVersion);
 
 const compatibleCodebraidPaths: Set<string> = new Set();
 
@@ -37,20 +36,11 @@ export async function checkCodebraidVersion(codebraidCommand: Array<string>) : P
 				if (!match) {
 					resolve(null);
 				} else {
-					let major = Number(match[1]);
-					let minor = Number(match[2]);
-					let patch = Number(match[3]);
-					if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) {
-						resolve(null);
-					} else if (major > minMajor) {
-						resolve(true);
-					} else if (major === minMajor && minor > minMinor) {
-						resolve(true);
-					} else if (major === minMajor && minor === minMinor && patch >= minPatch) {
-						resolve(true);
-					} else {
-						resolve(false);
-					}
+					const major = Number(match[1]);
+					const minor = Number(match[2]);
+					const patch = Number(match[3]);
+					const version: VersionArray = [major, minor, patch];
+					resolve(versionIsAtLeast(version, minCodebraidVersion));
 				}
 			}
 		});

@@ -1,4 +1,4 @@
-// Copyright (c) 2022, Geoffrey M. Poore
+// Copyright (c) 2022-2023, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -43,7 +43,7 @@ window.addEventListener('message', (event) => {
                 return;
             }
             isScrollingPreviewWithEditor = true;
-            scrollPreviewWithEditor(message.start);
+            scrollPreviewWithEditor(message.startLine);
             if (isScrollingPreviewWithEditorTimer !== undefined) {
                 clearTimeout(isScrollingPreviewWithEditorTimer);
             }
@@ -54,6 +54,35 @@ window.addEventListener('message', (event) => {
                 },
                 50
             );
+            return;
+        }
+        case 'codebraidPreview.tempAlert': {
+            let alertDiv = document.createElement('div');
+            alertDiv.classList.add('codebraid-temp-alert');
+            alertDiv.innerHTML = message.tempAlert;
+            document.body.appendChild(alertDiv);
+            const alertPosElems = alertDiv.getElementsByClassName('codebraid-temp-alert-pos');
+            for (const alertPosElem of alertPosElems) {
+                alertPosElem.addEventListener(
+                    'click',
+                    () => {
+                        const [lineNumber, lineColumn] = alertPosElem.getAttribute('data-codebraid-temp-alert-pos').split(':').map((s) => Number(s));
+                        vscode.postMessage({
+                            command: 'codebraidPreview.moveCursor',
+                            startLine: lineNumber, // Editor is zero-indexed, but that's handled on editor side.
+                            startColumn: lineColumn,
+                        });
+                    },
+                    false
+                );
+            }
+            return;
+        }
+        case 'codebraidPreview.clearTempAlerts': {
+            const elements = document.getElementsByClassName('codebraid-temp-alert');
+            for (const element of elements) {
+                element.parentNode.removeChild(element);
+            }
             return;
         }
     }
@@ -184,7 +213,7 @@ function scrollEditorWithPreview() {
     vscode.postMessage(
         {
             command: 'codebraidPreview.scrollEditor',
-            start: topLine, // Editor is zero-indexed, but that's handled on editor side.
+            startLine: topLine, // Editor is zero-indexed, but that's handled on editor side.
         }
     );
 }
@@ -280,7 +309,7 @@ ondblclick = function(event) {
     vscode.postMessage(
         {
             command: 'codebraidPreview.moveCursor',
-            start: targetLine,
+            startLine: targetLine,
         }
     );
 };

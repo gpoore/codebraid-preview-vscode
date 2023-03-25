@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.12.0",
+  "version": "0.13.0-dev1",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -17,10 +17,11 @@
     "Other"
   ],
   "activationEvents": [
+    "onLanguage:latex",
     "onLanguage:markdown",
-    "onCommand:codebraidPreview.startPreview",
-    "onCommand:codebraidPreview.runCodebraid",
-    "onCommand:codebraidPreview.exportDocument"
+    "onLanguage:org",
+    "onLanguage:restructuredtext",
+    "onLanguage:textile"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -91,10 +92,139 @@
           "default": true,
           "description": "Whether document CSS overrides the preview's default CSS (determines which is loaded last)"
         },
+        "codebraid.preview.pandoc.build": {
+          "type": "object",
+          "patternProperties": {
+            "^\\*(?:\\.[0-9a-z_]+(?:[+-][0-9a-z_]+)*)?\\.[0-9a-z_]+$": {
+              "type": "object",
+              "required": ["reader"],
+              "properties": {
+                "reader": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-z_]+|(?:(?<![\\\\^`])\"[^\"\r\n]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^'\r\n]+(?<![\\\\^`])'(?!')|[^ \t\"'\r\n;&|]+(?=[\"'.+-]|$))*?(?:\\.lua|(?<![\\\\^`])\"[^\"\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*\"|(?<![\\\\^`])'[^'\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*'))(?:[+-][0-9a-z_]+)*$",
+                  "description": "Pandoc reader (input format), including any extensions.  For example, `markdown+smart` or `custom_reader.lua-default_feature`.  This is used within a shell in running pandoc, so spaces must be quoted and other quoting/escaping may be necessary."
+                },
+                "preview": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[0-9a-z_]+(?:[+-][0-9a-z_]+)*|.+$": {
+                      "type": "object",
+                      "properties": {
+                        "writer": {
+                          "type": "string",
+                          "pattern": "^(?:[0-9a-z_]+|(?:(?<![\\\\^`])\"[^\"\r\n]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^'\r\n]+(?<![\\\\^`])'(?!')|[^ \t\"'\r\n;&|]+(?=[\"'.+-]|$))*?(?:\\.lua|(?<![\\\\^`])\"[^\"\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*\"|(?<![\\\\^`])'[^'\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*'))(?:[+-][0-9a-z_]+)*$",
+                          "description": "Pandoc writer (output format), including any extensions.  For example, `markdown+smart` or `custom_reader.lua-default_feature`.  This is used within a shell in running pandoc, so spaces must be quoted and other quoting/escaping may be necessary."
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(?!(?:from|reader|to|writer|input-file|input-files|output-file)$)[a-z]+(?:-[a-z]+)*$": {}
+                          },
+                          "default": {},
+                          "description": "Pandoc defaults.  This is converted into build-specific defaults files.  See Pandoc documentation for valid keys and values."
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^(?!(?:-f|--from|-r|--read|-t|--to|-w|--write|-o|--output)(?:[ =]|$))(?:-[a-zA-Z]|--[a-z]+(?:-[a-z]+)*)(?:[ =](?:(?<![\\\\^`])\"[^\"]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^']+(?<![\\\\^`])'(?!')|[^ \t\"';&|]+(?=[\"']|$))+)?$"
+                          },
+                          "default": [],
+                          "description": "Pandoc command-line options.  An array with one option per element.  For example, `[\"--filter FILTER\"]`.  Options are evaluated within a shell, so spaces must be quoted and other quoting/escaping may be necessary."
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "default": {"html": {"defaults": {}, "options": []}},
+                  "additionalProperties": false,
+                  "description": "Build configuration for preview."
+                },
+                "export": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[0-9a-z_]+(?:[+-][0-9a-z_]+)*|.+$": {
+                      "type": "object",
+                      "properties": {
+                        "writer": {
+                          "type": "string",
+                          "pattern": "^(?:[0-9a-z_]+|(?:(?<![\\\\^`])\"[^\"\r\n]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^'\r\n]+(?<![\\\\^`])'(?!')|[^ \t\"'\r\n;&|]+(?=[\"'.+-]|$))*?(?:\\.lua|(?<![\\\\^`])\"[^\"\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*\"|(?<![\\\\^`])'[^'\r\n]+?\\.lua(?:[+-][0-9a-z_]+)*'))(?:[+-][0-9a-z_]+)*$",
+                          "description": "Pandoc writer (output format), including any extensions.  For example, `markdown+smart` or `custom_reader.lua-default_feature`.  This is used within a shell in running pandoc, so spaces must be quoted and other quoting/escaping may be necessary."
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(?!(?:from|reader|to|writer|input-file|input-files|output-file)$)[a-z]+(?:-[a-z]+)*$": {}
+                          },
+                          "default": {},
+                          "description": "Pandoc defaults.  This is converted into build-specific defaults files.  See Pandoc documentation for valid keys and values."
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^(?!(?:-f|--from|-r|--read|-t|--to|-w|--write|-o|--output)(?:[ =]|$))(?:-[a-zA-Z]|--[a-z]+(?:-[a-z]+)*)(?:[ =](?:(?<![\\\\^`])\"[^\"]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^']+(?<![\\\\^`])'(?!')|[^ \t\"';&|]+(?=[\"']|$))+)?$"
+                          },
+                          "default": [],
+                          "description": "Pandoc command-line options.  An array with one option per element.  For example, `[\"--filter FILTER\"]`.  Options are evaluated within a shell, so spaces must be quoted and other quoting/escaping may be necessary."
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "default": {"html": {"defaults": {}, "options": []}},
+                  "additionalProperties": false,
+                  "description": "Build configuration for export."
+                }
+              }
+            }
+          },
+          "default": {
+            "*.cbmd": {
+              "reader": "commonmark_x",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.markdown": {
+              "reader": "commonmark_x",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.md": {
+              "reader": "commonmark_x",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.org": {
+              "reader": "org",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.rst": {
+              "reader": "rst",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.tex": {
+              "reader": "latex",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            },
+            "*.textile": {
+              "reader": "textile",
+              "preview": {"html": {"defaults": {}, "options": []}},
+              "export": {}
+            }
+          },
+          "description": "Mapping from file extensions to Pandoc build configuration for preview/export.  For example, `{\"*.md\": {\"reader\": \"markdown\", \"preview\": {\"html\": {\"defaults\": {\"highlight-style\": \"kate\"}, \"options\": [\"--toc\"]}}, \"defaults\":{}}}`.  Pandoc readers (input formats) and preview/export formats can include extensions (for example, `markdown+smart` or `custom_reader.lua-default_feature`).  The \"defaults\" fields are converted into build-specific defaults files; these are defaults, so they will be overwritten by other settings.  The \"options\" fields are command-line options, so they typically are not overwritten or modified by other settings.",
+          "markdownDescription": "Mapping from file extensions to Pandoc build configuration for preview/export.  For example, `{\"*.md\": {\"reader\": \"markdown\", \"preview\": {\"html\": {\"defaults\": {\"highlight-style\": \"kate\"}, \"options\": [\"--toc\"]}}, \"defaults\":{}}}`.  Pandoc readers (input formats) and preview/export formats can include extensions (for example, `markdown+smart` or `custom_reader.lua-default_feature`).  The \"defaults\" fields are converted into build-specific defaults files; these are defaults, so they will be overwritten by other settings.  The \"options\" fields are command-line options, so they typically are not overwritten or modified by other settings."
+        },
         "codebraid.preview.pandoc.fromFormat": {
           "type": "string",
           "default": "commonmark_x",
-          "description": "Pandoc source format (`--from=FORMAT`).  Currently, only \"commonmark_x\" supports scroll sync."
+          "description": "Pandoc source format (`--from=FORMAT`).  Currently, only \"commonmark_x\" supports scroll sync.",
+          "deprecationMessage": "Deprecated:  Use codebraid.preview.pandoc.build instead, with file extension *.md.",
+          "markdownDeprecationMessage": "**Deprecated**:  Use `codebraid.preview.pandoc.build` instead, with file extension `*.md`."
         },
         "codebraid.preview.pandoc.options": {
           "type": "array",
@@ -105,14 +235,25 @@
             "patternErrorMessage": "One option (including any value) per line/array element.  Options are evaluated within a shell, so spaces must be quoted.  Specify source format in \"pandocFromFormat\"."
           },
           "default": [],
-          "description": "Pandoc command-line options.  In the settings GUI, one option per line (for example, `--filter FILTER`).  In `settings.json`, an array with one option per element (for example, `[\"--filter FILTER\"]`).  Options are evaluated within a shell, so spaces must be quoted."
+          "description": "Pandoc command-line options.  In the settings GUI, one option per line (for example, `--filter FILTER`).  In `settings.json`, an array with one option per element (for example, `[\"--filter FILTER\"]`).  Options are evaluated within a shell, so spaces must be quoted.",
+          "deprecationMessage": "Deprecated:  Use codebraid.preview.pandoc.build instead, with file extension *.md.",
+          "markdownDeprecationMessage": "**Deprecated**:  Use `codebraid.preview.pandoc.build` instead, with file extension `*.md`."
+        },
+        "codebraid.preview.pandoc.defaultsFile": {
+          "type": "string",
+          "default": "_codebraid_preview.yaml",
+          "pattern": "^[^\\\\/]+$",
+          "patternErrorMessage": "Must be a file name without a path (basename).  Must be a file in the document directory.",
+          "description": "Special Pandoc defaults file in the document directory.  If it exists, it is automatically used in creating the preview and in exporting documents.  If it defines \"input-files\", the preview will automatically work with all files in a multi-file document."
         },
         "codebraid.preview.pandoc.previewDefaultsFile": {
           "type": "string",
           "default": "_codebraid_preview.yaml",
           "pattern": "^[^\\\\/]+$",
           "patternErrorMessage": "Must be a file name without a path to the file.",
-          "description": "Special Pandoc defaults file in document directory.  If it exists and defines \"input-files\", the preview will automatically work with all files in a multi-file document."
+          "description": "Special Pandoc defaults file in document directory.  If it exists and defines \"input-files\", the preview will automatically work with all files in a multi-file document.",
+          "deprecationMessage": "Deprecated:  Use codebraid.preview.pandoc.defaultsFile instead.",
+          "markdownDeprecationMessage": "**Deprecated**:  Use `codebraid.preview.pandoc.defaultsFile` instead."
         },
         "codebraid.preview.pandoc.showRaw": {
           "type": "boolean",

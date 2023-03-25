@@ -126,6 +126,9 @@ function Span(elem)
         return elem
     end
     local startLineNum, endLineNum = parseStartEndLineNum(elem, dataPos)
+    if endLineNum > maxLineNum then
+        maxLineNum = endLineNum
+    end
     if trackedLines[startLineNum] ~= nil then
         if elem.identifier == '' and #(elem.classes) == 0 and #(elem.attributes) == 1 then
             return elem.content

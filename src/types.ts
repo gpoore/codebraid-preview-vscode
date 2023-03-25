@@ -1,4 +1,4 @@
-// Copyright (c) 2022, Geoffrey M. Poore
+// Copyright (c) 2022-2023, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -7,13 +7,15 @@
 
 
 import type * as vscode from 'vscode';
-
+import type { PandocBuildConfigCollections } from './pandoc_build_configs';
+import type { PandocVersionInfo } from './pandoc_version_info';
 
 export type ExtensionState = {
 	'isWindows': boolean,
 	'context': vscode.ExtensionContext,
 	'config': vscode.WorkspaceConfiguration,
-	'normalizedConfigPandocOptions': Array<string>,
+	'pandocVersionInfo': PandocVersionInfo,
+	'pandocBuildConfigCollections': PandocBuildConfigCollections,
 	'normalizedExtraLocalResourceRoots': Array<string>,
 	'resourceRootUris': Array<vscode.Uri>,
 	'log': (message: string) => void,
