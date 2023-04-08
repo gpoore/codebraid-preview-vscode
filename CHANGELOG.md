@@ -1,7 +1,7 @@
 # Change Log
 
 
-# v0.14.0 (dev)
+# v0.14.0 (2023-04-08)
 
 * The preview is now compatible with Jupyter notebooks (`ipynb`) (#16).
   Scroll sync is not supported.  VS Code opens notebooks with
