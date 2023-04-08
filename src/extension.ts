@@ -14,6 +14,7 @@ import { resourceRoots } from './resources';
 import { FileExtension } from './util';
 import { PandocVersionInfo, getPandocVersionInfo } from './pandoc_version_info';
 import { PandocBuildConfigCollections } from './pandoc_build_configs';
+import { NotebookTextEditor } from './notebook';
 import PreviewPanel from './preview_panel';
 
 
@@ -184,6 +185,16 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 		null,
 		context.subscriptions
 	);
+	vscode.window.onDidChangeActiveNotebookEditor(
+		updateStatusBarItems,
+		null,
+		context.subscriptions
+	);
+	vscode.window.onDidChangeVisibleNotebookEditors(
+		updateStatusBarItems,
+		null,
+		context.subscriptions
+	);
 	// There currently isn't an event for the webview becoming visible
 	checkPreviewVisibleInterval = setInterval(
 		() => {updateWithPreviewStatusBarItems();},
@@ -303,12 +314,32 @@ function startPreview() {
 		showPandocVersionMessage();
 	}
 
-	let editor: vscode.TextEditor | undefined = undefined;
-	let activeOrVisibleEditors: Array<vscode.TextEditor> = [];
+	let editor: vscode.TextEditor | NotebookTextEditor | undefined = undefined;
+	let activeOrVisibleEditors: Array<vscode.TextEditor | NotebookTextEditor> = [];
 	if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
 		activeOrVisibleEditors.push(vscode.window.activeTextEditor);
 	} else {
 		activeOrVisibleEditors.push(...vscode.window.visibleTextEditors);
+		// `vscode.TextEditor` gets priority, but check for notebooks when
+		// they are supported
+		if (extensionState.pandocBuildConfigCollections.hasAnyConfigCollection('.ipynb')) {
+			let pushedNotebookEditor: boolean = false;
+			if (vscode.window.activeNotebookEditor) {
+				const notebookTextEditor = new NotebookTextEditor(vscode.window.activeNotebookEditor);
+				if (notebookTextEditor.isIpynb) {
+					activeOrVisibleEditors.push(notebookTextEditor);
+					pushedNotebookEditor = true;
+				}
+			}
+			if (!pushedNotebookEditor) {
+				for (const notebookEditor of vscode.window.visibleNotebookEditors) {
+					const notebookTextEditor = new NotebookTextEditor(notebookEditor);
+					if (notebookTextEditor.isIpynb) {
+						activeOrVisibleEditors.push(notebookTextEditor);
+					}
+				}
+			}
+		}
 	}
 	if (activeOrVisibleEditors.length === 0) {
 		return;
@@ -505,12 +536,13 @@ function updateScrollSyncStatusBarItemText(symbol: string) {
 
 function updateStatusBarItems() {
 	let showOpenPreviewStatusBarItem = true;
-	if (vscode.window.visibleTextEditors.length === 0) {
+	if (vscode.window.visibleTextEditors.length === 0 && vscode.window.visibleNotebookEditors.length === 0) {
 		showOpenPreviewStatusBarItem = false;
 	} else {
 		let visibleEditorsCount = 0;
 		let previewEditorsCount = 0;
-		for (const visibleEditor of vscode.window.visibleTextEditors) {
+		const visibleEditors = [...vscode.window.visibleTextEditors, ...vscode.window.visibleNotebookEditors.map(ed => new NotebookTextEditor(ed))];
+		for (const visibleEditor of visibleEditors) {
 			const document = visibleEditor.document;
 			if (document.uri.scheme === 'file' && extensionState.pandocBuildConfigCollections.hasAnyConfigCollection(new FileExtension(document.fileName))) {
 				visibleEditorsCount += 1;

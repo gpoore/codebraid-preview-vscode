@@ -20,7 +20,14 @@ import { PandocDefaultsFile } from './pandoc_defaults_file';
 import { countNewlines, FileExtension } from './util';
 import { webviewResources, pandocResources } from './resources';
 import { checkCodebraidVersion, minCodebraidVersionString } from './check_codebraid';
-import { readersWithWrapper, builtinToFileExtensionMap, defaultSaveDialogFilter, defaultSaveDialogFileExtensionToFilterKeyMap } from './pandoc_settings';
+import {
+	readersWithWrapper,
+	builtinToFileExtensionMap,
+	defaultSaveDialogFilter,
+	defaultSaveDialogFileExtensionToFilterKeyMap,
+	extractedMediaDirectory,
+} from './pandoc_settings';
+import { NotebookTextEditor } from './notebook';
 
 
 type Source = {
@@ -87,8 +94,15 @@ export default class PreviewPanel implements vscode.Disposable {
 	// single file to be included multiple times.
 	fileNames: Array<string>;
 	uriCache: Map<string, vscode.Uri>;
-	// Track visible editor that is relevant.
-	visibleEditor: vscode.TextEditor | undefined;
+	// Track visible editor that is relevant.  For notebooks, this is
+	// currently set to the initial editor and never updated later regardless
+	// of visibility.  Notebooks do not currently support features like scroll
+	// sync that rely on the current visible editor, and having constant
+	// access to the editor is convenient for checking whether the notebook
+	// has unsaved changes.  If notebook support is expanded in the future,
+	// `visibleEditor` should be updated, and something should be added like
+	// `editors: Array<vscode.TextEditor | vscode.NotebookEditor>`.
+	visibleEditor: vscode.TextEditor | NotebookTextEditor | undefined;
 	// Track recent visible files to determine which visible editor to sync
 	// with.  It may be worth tracking `viewColumn` as well eventually.
 	currentFileName: string;
@@ -108,6 +122,8 @@ export default class PreviewPanel implements vscode.Disposable {
 	lastExportFileNameNoExt: string | undefined;
 	lastExportFileExtension: string | undefined;
 	lastExportWriterName: string | undefined;
+	cacheKey: string;
+	isNotebook: boolean;
 
 	// Display
 	// -------
@@ -160,7 +176,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	codebraidPlaceholderLangs: Map<string, string>;
 	isExporting: boolean;
 
-	constructor(editor: vscode.TextEditor, extension: ExtensionState, fileExtension: FileExtension) {
+	constructor(editor: vscode.TextEditor | NotebookTextEditor, extension: ExtensionState, fileExtension: FileExtension) {
 		this.disposables = [];
 
 		this.extension = extension;
@@ -171,6 +187,10 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.uriCache = new Map();
 		this.visibleEditor = editor;
 		this.currentFileName = editor.document.fileName;
+		const hash = crypto.createHash('sha1');
+		hash.update(editor.document.fileName);
+		this.cacheKey = hash.digest('base64url');
+		this.isNotebook = 'isNotebook' in editor;
 
 		// Wait to create defaults until the attributes needed are set
 		this.documentPandocDefaultsFile = new PandocDefaultsFile(this);
@@ -255,6 +275,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--standalone`,
 			`--lua-filter="${this.pandocResourcePaths.sourceposSyncFilter}"`,
 			`--katex=${this.webviewResourceUris.katex}/`,
+			`--extract-media="${extractedMediaDirectory}/${this.cacheKey}"`,
 		];
 		this.pandocCssArgs = [
 			`--css=${this.webviewResourceUris.vscodeCss}`,
@@ -298,41 +319,46 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.usingCodebraid = false;
 		this.isExporting = false;
 
-		vscode.window.onDidChangeActiveTextEditor(
-			this.onDidChangeActiveTextEditor,
-			this,
-			this.disposables
-		);
+		if (editor instanceof NotebookTextEditor) {
+			vscode.workspace.onDidSaveNotebookDocument(
+				this.onDidSaveNotebookDocument,
+				this,
+				this.disposables
+			);
+		} else {
+			vscode.window.onDidChangeActiveTextEditor(
+				this.onDidChangeActiveTextEditor,
+				this,
+				this.disposables
+			);
+			vscode.window.onDidChangeVisibleTextEditors(
+				this.onDidChangeVisibleTextEditors,
+				this,
+				this.disposables
+			);
+			vscode.window.onDidChangeTextEditorVisibleRanges(
+				this.onDidChangeTextEditorVisibleRanges,
+				this,
+				this.disposables
+			);
+			this.panel.webview.onDidReceiveMessage(
+				this.onDidReceiveMessage,
+				this,
+				this.disposables
+			);
+			vscode.workspace.onDidChangeTextDocument(
+				this.onDidChangeTextDocument,
+				this,
+				this.disposables
+			);
+			vscode.workspace.onDidSaveTextDocument(
+				this.onDidSaveTextDocument,
+				this,
+				this.disposables
+			);
+		}
 
-		vscode.window.onDidChangeVisibleTextEditors(
-			this.onDidChangeVisibleTextEditors,
-			this,
-			this.disposables
-		);
 
-		vscode.workspace.onDidChangeTextDocument(
-			this.onDidChangeTextDocument,
-			this,
-			this.disposables
-		);
-
-		vscode.workspace.onDidSaveTextDocument(
-			this.onDidSaveTextDocument,
-			this,
-			this.disposables
-		);
-
-		vscode.window.onDidChangeTextEditorVisibleRanges(
-			this.onDidChangeTextEditorVisibleRanges,
-			this,
-			this.disposables
-		);
-
-		this.panel.webview.onDidReceiveMessage(
-			this.onDidReceiveMessage,
-			this,
-			this.disposables
-		);
 
 		this.updateConfiguration();
 	}
@@ -365,6 +391,10 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.onDisposeExtensionCallback();
 			this.onDisposeExtensionCallback = undefined;
 		}
+		fs.promises.rm(
+			path.join(this.cwd, extractedMediaDirectory, this.cacheKey),
+			{force: true, recursive: true}
+		);
 	}
 
 	async updateConfiguration() {
@@ -853,6 +883,17 @@ ${message}
 		}
 	}
 
+	onDidSaveNotebookDocument(notebookDocument: vscode.NotebookDocument) {
+		if (!this.panel) {
+			return;
+		}
+		if (this.fileNames.indexOf(notebookDocument.uri.fsPath) !== -1) {
+			// Notebooks need a delay.  Updating immediately can read the old
+			// document before the new document is written.
+			setTimeout(() => this.update(), 100);
+		}
+	}
+
 	onDidChangeTextEditorVisibleRanges(event: vscode.TextEditorVisibleRangesChangeEvent) {
 		if (!this.panel) {
 			return;
@@ -887,8 +928,11 @@ ${message}
 		}
 	}
 
-	onDidChangePreviewEditor(editor: vscode.TextEditor) {
+	onDidChangePreviewEditor(editor: vscode.TextEditor | NotebookTextEditor) {
 		if (!this.panel) {
+			return;
+		}
+		if (editor instanceof NotebookTextEditor) {
 			return;
 		}
 		// Scroll preview when switching to a new editor for the first time.
@@ -1037,7 +1081,7 @@ ${message}
 		}
 	}
 
-	switchEditor(editor: vscode.TextEditor) {
+	switchEditor(editor: vscode.TextEditor | NotebookTextEditor) {
 		// This is called by `startPreview()`, which checks the editor for
 		// validity first.
 		if (!this.panel) {
@@ -1910,6 +1954,12 @@ ${message}
 		if (!this.pandocPreviewOptions) {
 			vscode.window.showErrorMessage(
 				'Cannot export while configuration is updating or is invalid'
+			);
+			return;
+		}
+		if (this.isNotebook && this.visibleEditor?.document.isDirty) {
+			vscode.window.showErrorMessage(
+				'Cannot export while notebook contains unsaved changes'
 			);
 			return;
 		}

@@ -166,6 +166,33 @@ sync.  For custom formats, look in the Git repo under
 `pandoc/lib/readerlib.lua` and `pandoc/readers` for details about adding
 scroll sync using a short Lua wrapper script.
 
+### Jupyter notebooks
+
+The preview is compatible with Jupyter notebooks (`ipynb`).  Simply add the
+following to `settings.json`, under `codebraid.preview.pandoc.build`:
+```
+"*.ipynb": {
+    "reader": "ipynb",
+    "preview": {
+        "html": {
+            "defaults": {},
+            "options": []
+        }
+    },
+    "export": {}
+},
+```
+Jupyter notebooks have some limitations compared to other formats.  Scroll
+sync is not currently supported.  The preview currently only updates when the
+notebook is saved; the preview does not update live as you type.
+
+VS Code already provides a
+[built-in notebook editor](https://code.visualstudio.com/docs/datascience/jupyter-notebooks).
+A Pandoc-based preview for Jupyter notebooks will primarily be useful when
+Pandoc filters or similar features are used to customize a notebook during
+export.
+
+
 
 ## A note on input formats and `commonmark_x`
 

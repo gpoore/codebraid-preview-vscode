@@ -12,6 +12,7 @@
 export const pandocReaderWrapperPath = 'pandoc/readers';
 // Relative to document directory (cwd)
 export const processedDefaultsRelativeFileName = '_codebraid/temp_defaults/_codebraid_preview.yaml';
+export const extractedMediaDirectory = '_codebraid/extracted_media';
 
 
 export const fallbackFileExtensionToReaderMap: Map<string, string> = new Map([

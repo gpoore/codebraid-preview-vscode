@@ -1,6 +1,15 @@
 # Change Log
 
 
+# v0.14.0 (dev)
+
+* The preview is now compatible with Jupyter notebooks (`ipynb`) (#16).
+  Scroll sync is not supported.  VS Code opens notebooks with
+  `vscode.NotebookEditor` rather than `vscode.TextEditor`, and the preview
+  previously ignored `vscode.NotebookEditor`.
+
+
+
 # v0.13.0 (2023-03-25)
 
 * Pandoc 3.1.1 is now the minimum recommended version.  The Pandoc version is
