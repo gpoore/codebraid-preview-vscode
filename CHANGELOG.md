@@ -1,6 +1,12 @@
 # Change Log
 
 
+# v0.15.0 (dev)
+
+* Added setting `codebraid.preview.pandoc.executable` (#17).
+
+
+
 # v0.14.0 (2023-04-08)
 
 * The preview is now compatible with Jupyter notebooks (`ipynb`) (#16).

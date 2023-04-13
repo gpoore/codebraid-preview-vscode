@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.14.0",
+  "version": "0.15.0-dev1",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -206,6 +206,13 @@
           },
           "description": "Mapping from file extensions to Pandoc build configuration for preview/export.  For example, `{\"*.md\": {\"reader\": \"markdown\", \"preview\": {\"html\": {\"defaults\": {\"highlight-style\": \"kate\"}, \"options\": [\"--toc\"]}}, \"defaults\":{}}}`.  Pandoc readers (input formats) and preview/export formats can include extensions (for example, `markdown+smart` or `custom_reader.lua-default_feature`).  The \"defaults\" fields are converted into build-specific defaults files; these are defaults, so they will be overwritten by other settings.  The \"options\" fields are command-line options, so they typically are not overwritten or modified by other settings.",
           "markdownDescription": "Mapping from file extensions to Pandoc build configuration for preview/export.  For example, `{\"*.md\": {\"reader\": \"markdown\", \"preview\": {\"html\": {\"defaults\": {\"highlight-style\": \"kate\"}, \"options\": [\"--toc\"]}}, \"defaults\":{}}}`.  Pandoc readers (input formats) and preview/export formats can include extensions (for example, `markdown+smart` or `custom_reader.lua-default_feature`).  The \"defaults\" fields are converted into build-specific defaults files; these are defaults, so they will be overwritten by other settings.  The \"options\" fields are command-line options, so they typically are not overwritten or modified by other settings."
+        },
+        "codebraid.preview.pandoc.executable": {
+          "type": "string",
+          "default": "pandoc",
+          "description": "Pandoc executable.  This is used within a shell, so it must be appropriately quoted and escaped.",
+          "pattern": "(?:(?<![\\\\^`])\"[^\"]+(?<![\\\\^`])\"(?!\")|(?<![\\\\^`])'[^']+(?<![\\\\^`])'(?!')|[^ \t\"';&|]+(?=[\"']|$))+",
+          "patternErrorMessage": "This is used within a shell, so it must be appropriately quoted and escaped."
         },
         "codebraid.preview.pandoc.fromFormat": {
           "type": "string",

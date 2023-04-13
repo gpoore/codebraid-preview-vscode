@@ -370,6 +370,9 @@ detected by checking `node.attributes['data-pos'] ~= nil`.
   files must be in the same directory with the defaults file.  Document files
   in subdirectories are not supported.
 
+* `codebraid.preview.pandoc.executable` [`pandoc`]:  Pandoc executable.  This
+  is used within a shell, so it must be appropriately quoted and escaped.
+
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content (Pandoc Markdown `{=format}`) in the
   preview.

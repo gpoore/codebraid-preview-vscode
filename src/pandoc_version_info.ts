@@ -6,6 +6,7 @@
 //
 
 
+import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import { VersionArray, versionToString, versionIsAtLeast } from './util';
 
@@ -14,6 +15,7 @@ const minPandocVersionRecommended: VersionArray = [3, 1, 1];
 const minPandocVersionCodebraidWrappers: VersionArray = [3, 1, 1];
 
 export type PandocVersionInfo = {
+	executable: string,
 	version: VersionArray,
 	versionString: string,
 	major: number,
@@ -26,8 +28,9 @@ export type PandocVersionInfo = {
 	supportsCodebraidWrappers: boolean,
 } | null | undefined;
 
-export async function getPandocVersionInfo() : Promise<PandocVersionInfo | null | undefined> {
-	const executable = 'pandoc';
+export async function getPandocVersionInfo(config: vscode.WorkspaceConfiguration) : Promise<PandocVersionInfo | null | undefined> {
+	// Any quoting of executable is supplied by user in config
+	const executable = config.pandoc.executable;
 	const args = ['--version'];
 	const maybeVersion: VersionArray | null | undefined = await new Promise<VersionArray | null | undefined>((resolve) => {
 		child_process.execFile(executable, args, {shell: true, encoding: 'utf8'}, (error, stdout, stderr) => {
@@ -55,6 +58,7 @@ export async function getPandocVersionInfo() : Promise<PandocVersionInfo | null 
 		return maybeVersion;
 	}
 	const pandocVersionInfo = {
+		executable: executable,
 		version: maybeVersion,
 		versionString: versionToString(maybeVersion),
 		major: maybeVersion[0],
