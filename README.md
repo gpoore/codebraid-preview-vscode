@@ -282,9 +282,10 @@ detected by checking `node.attributes['data-pos'] ~= nil`.
 
 ### Pandoc
 
-* `codebraid.preview.pandoc.build`:  This is where file extensions are
-  associated with Pandoc build settings for preview and export.  For example,
-  here is the default entry for Markdown documents:
+* `codebraid.preview.pandoc.build` [`<default config for several formats>`]:
+  This is where file extensions are associated with Pandoc build settings for
+  preview and export.  For example, here is the default entry for Markdown
+  documents:
 
   ```
   "*.md": {
@@ -369,6 +370,10 @@ detected by checking `node.attributes['data-pos'] ~= nil`.
   If the defaults file defines `input-files` (or `input-file`), all specified
   files must be in the same directory with the defaults file.  Document files
   in subdirectories are not supported.
+
+* `codebraid.preview.pandoc.extraEnv` [`{}`]:  Additional environment
+  variables that are set for the Pandoc subprocess used to generate the
+  preview and to export documents.
 
 * `codebraid.preview.pandoc.executable` [`pandoc`]:  Pandoc executable.  This
   is used within a shell, so it must be appropriately quoted and escaped.

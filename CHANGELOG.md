@@ -5,6 +5,8 @@
 
 * Added setting `codebraid.preview.pandoc.executable` (#17).
 
+* Added setting `codebraid.preview.pandoc.extraEnv` (#17).
+
 
 
 # v0.14.0 (2023-04-08)

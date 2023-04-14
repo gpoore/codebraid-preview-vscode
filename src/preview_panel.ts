@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { ExtensionState } from './types';
-import type { PandocVersionInfo } from './pandoc_version_info';
+import type { PandocInfo } from './pandoc_info';
 import { PandocReader, PandocWriter, fallbackHtmlWriter } from './pandoc_util';
 import type { PandocPreviewBuildConfig, PandocExportBuildConfig, PandocBuildConfigCollection } from './pandoc_build_configs';
 import { PandocDefaultsFile } from './pandoc_defaults_file';
@@ -112,7 +112,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Pandoc
 	// ------
 	fileExtension: FileExtension;
-	pandocVersionInfo: PandocVersionInfo;
+	pandocInfo: PandocInfo;
 	pandocPreviewOptions: PandocPreviewOptions | undefined;
 	lastPandocPreviewOptions: PandocPreviewOptions | undefined;
 	pandocPreviewBuildConfig: PandocPreviewBuildConfig | undefined;
@@ -419,7 +419,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.resetContentSecurity();
 		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
 
-		this.pandocVersionInfo = undefined;
+		this.pandocInfo = undefined;
 		this.lastPandocPreviewOptions = this.pandocPreviewOptions;
 		this.pandocPreviewOptions = undefined;
 		this.lastPandocPreviewBuildConfig = this.pandocPreviewBuildConfig;
@@ -567,7 +567,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			fileScope = false;
 		}
 
-		this.pandocVersionInfo = this.extension.pandocVersionInfo;
+		this.pandocInfo = this.extension.pandocInfo;
 		this.pandocPreviewOptions = {
 			reader: reader,
 			writer: writer,
@@ -1379,7 +1379,7 @@ ${message}
 			this.needsBuild = true;
 		}
 
-		if (this.updateTimer || this.isBuildInProgress || !this.pandocPreviewOptions || !this.pandocVersionInfo) {
+		if (this.updateTimer || this.isBuildInProgress || !this.pandocPreviewOptions || !this.pandocInfo) {
 			return;
 		}
 
@@ -1435,7 +1435,7 @@ ${message}
 			this.showUpdatingMessage(null, 'running');
 		}
 
-		const executable: string = this.pandocVersionInfo.executable;
+		const executable: string = this.pandocInfo.executable;
 		const args: Array<string> = [];
 		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
 			args.push(...this.pandocCssArgs);
@@ -1466,7 +1466,7 @@ ${message}
 		// require any quoting by the user).  Readers/writers in preview
 		// defaults file are only extracted and used here if they are builtin.
 		if (this.pandocPreviewOptions.reader) {
-			if (this.pandocVersionInfo.supportsCodebraidWrappers) {
+			if (this.pandocInfo.supportsCodebraidWrappers) {
 				if (this.pandocPreviewOptions.fileScope && this.pandocPreviewOptions.reader.canFileScope && !this.pandocPreviewOptions.reader.hasExtensionsFileScope) {
 					// Any incompatibilities have already resulted in error
 					// messages during configuration update
@@ -1493,7 +1493,7 @@ ${message}
 		let buildProcess = child_process.execFile(
 			executable,
 			args,
-			this.buildProcessOptions,
+			{...this.buildProcessOptions, env: {...process.env, ...this.pandocInfo.extraEnv}},
 			(error, stdout, stderr) => {
 				this.isBuildInProgress = false;
 				if (!this.panel) {
@@ -1582,7 +1582,7 @@ ${message}
 			}
 		);
 
-		if (this.pandocVersionInfo.supportsCodebraidWrappers && this.pandocPreviewOptions.reader?.hasWrapper) {
+		if (this.pandocInfo.supportsCodebraidWrappers && this.pandocPreviewOptions.reader?.hasWrapper) {
 			buildProcess.stdin?.write(this.sourcesToJsonHeader(sources));
 		}
 		let nextSourceOffset: number = 0;
@@ -1778,7 +1778,7 @@ ${message}
 		if (!this.panel || this.isCodebraidInProgress) {
 			return;
 		}
-		if (!this.pandocPreviewOptions) {
+		if (!this.pandocPreviewOptions || !this.pandocInfo) {
 			vscode.window.showErrorMessage(
 				'Cannot run Codebraid while configuration is updating or is invalid'
 			);
@@ -1884,7 +1884,7 @@ ${message}
 			const codebraidProcess = child_process.spawn(
 				executable,
 				args,
-				this.codebraidProcessOptions
+				{...this.codebraidProcessOptions, env: {...process.env, ...this.pandocInfo?.extraEnv}}
 			);
 			codebraidProcess.stdin?.setDefaultEncoding('utf8');
 			codebraidProcess.stdout?.setEncoding('utf8');
@@ -1955,7 +1955,7 @@ ${message}
 
 
 	async export() {
-		if (!this.pandocPreviewOptions || !this.pandocVersionInfo) {
+		if (!this.pandocPreviewOptions || !this.pandocInfo) {
 			vscode.window.showErrorMessage(
 				'Cannot export while configuration is updating or is invalid'
 			);
@@ -2144,9 +2144,9 @@ ${message}
 			fileScope = pandocExportBuildConfig.optionsFileScope;
 		}
 
-		// `this.pandocVersionInfo` is checked in `export()`, and config is
+		// `this.pandocInfo` is checked in `export()`, and config is
 		// locked during export, so the fallback value shouldn't ever be used
-		const executable: string = this.pandocVersionInfo?.executable || 'pandoc';
+		const executable: string = this.pandocInfo?.executable || 'pandoc';
 		const args: Array<string> = [];
 		if (pandocExportBuildConfig?.defaultsFileName) {
 			// This needs quoting, since it involves an absolute path
@@ -2168,7 +2168,7 @@ ${message}
 		// require any quoting by the user).  Readers/writers in preview
 		// defaults file are only extracted and used here if they are builtin.
 		if (reader) {
-			if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers) {
+			if (this.extension.pandocInfo?.supportsCodebraidWrappers) {
 				if (fileScope && reader.canFileScope && !reader.hasExtensionsFileScope) {
 					// Any incompatibilities have already resulted in error
 					// messages during configuration update
@@ -2192,7 +2192,7 @@ ${message}
 		const buildProcess = child_process.execFile(
 			executable,
 			args,
-			this.buildProcessOptions,
+			{...this.buildProcessOptions, env: {...process.env, ...this.pandocInfo?.extraEnv}},
 			(error, stdout, stderr) => {
 				this.extension.statusBarConfig.setDocumentExportWaiting();
 				this.isExporting = false;
@@ -2227,7 +2227,7 @@ ${message}
 			}
 		);
 
-		if (this.extension.pandocVersionInfo?.supportsCodebraidWrappers && reader?.hasWrapper) {
+		if (this.extension.pandocInfo?.supportsCodebraidWrappers && reader?.hasWrapper) {
 			buildProcess.stdin?.write(this.sourcesToJsonHeader(sources));
 		}
 		let includingCodebraidOutput: boolean;

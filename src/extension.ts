@@ -12,7 +12,7 @@ import type { ExtensionState } from './types';
 import { isWindows, homedir } from './constants';
 import { resourceRoots } from './resources';
 import { FileExtension } from './util';
-import { PandocVersionInfo, getPandocVersionInfo } from './pandoc_version_info';
+import { PandocInfo, getPandocInfo } from './pandoc_info';
 import { PandocBuildConfigCollections } from './pandoc_build_configs';
 import { NotebookTextEditor } from './notebook';
 import PreviewPanel from './preview_panel';
@@ -40,7 +40,7 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 	// used.  Simply loading the extension in the background won't result in
 	// errors/warnings.
 	const config = vscode.workspace.getConfiguration('codebraid.preview');
-	const pandocVersionInfo = await getPandocVersionInfo(config);
+	const pandocInfo = await getPandocInfo(config);
 
 	const outputChannel = vscode.window.createOutputChannel('Codebraid Preview');
 	context.subscriptions.push(outputChannel);
@@ -102,7 +102,7 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 		isWindows: isWindows,
 		context: context,
 		config: config,
-		pandocVersionInfo: pandocVersionInfo,
+		pandocInfo: pandocInfo,
 		pandocBuildConfigCollections: pandocBuildConfigCollections,
 		normalizedExtraLocalResourceRoots: normalizeExtraLocalResourceRoots(config),
 		resourceRootUris: resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root))),
@@ -156,16 +156,19 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 	vscode.workspace.onDidChangeConfiguration(
 		async () => {
 			const nextConfig = vscode.workspace.getConfiguration('codebraid.preview');
-			if (nextConfig.pandoc.executable !== extensionState.pandocVersionInfo?.executable) {
-				extensionState.pandocVersionInfo = await getPandocVersionInfo(nextConfig);
+			if (nextConfig.pandoc.executable !== extensionState.pandocInfo?.executable) {
+				extensionState.pandocInfo = await getPandocInfo(nextConfig);
 				extensionState.config = nextConfig;
 				extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
-				if (!extensionState.pandocVersionInfo) {
+				if (!extensionState.pandocInfo) {
 					showPandocMissingError();
-				} else if (!extensionState.pandocVersionInfo.isMinVersionRecommended) {
+				} else if (!extensionState.pandocInfo.isMinVersionRecommended) {
 					showPandocVersionMessage();
 				}
 			} else {
+				if (extensionState.pandocInfo) {
+					extensionState.pandocInfo.extraEnv = nextConfig.pandoc.extraEnv;
+				}
 				extensionState.config = nextConfig;
 				extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
 			}
@@ -264,15 +267,15 @@ function normalizeExtraLocalResourceRoots(config: vscode.WorkspaceConfiguration)
 function showPandocMissingError(checkModifiedSystem?: boolean) {
 	if (checkModifiedSystem) {
 		// Update version info for future in case system has been modified
-		getPandocVersionInfo(extensionState.config).then((result) => {
-			extensionState.pandocVersionInfo = result;
+		getPandocInfo(extensionState.config).then((result) => {
+			extensionState.pandocInfo = result;
 			if (result && !result.isMinVersionRecommended) {
 				showPandocVersionMessage();
 			}
 		});
 	}
 	let message: string;
-	if (extensionState.pandocVersionInfo === undefined) {
+	if (extensionState.pandocInfo === undefined) {
 		message = [
 			`Could not find Pandoc executable "${extensionState.config.pandoc.executable}".`,
 			'Make sure that it is installed and on PATH.',
@@ -294,10 +297,10 @@ let didShowPandocVersionMessage: boolean = false;
 function showPandocVersionMessage(checkModifiedSystem?: boolean) {
 	if (checkModifiedSystem) {
 		// Update version info for future in case system has been modified
-		getPandocVersionInfo(extensionState.config).then((result) => {
-			const oldPandocVersionInfo = extensionState.pandocVersionInfo;
-			extensionState.pandocVersionInfo = result;
-			if ((result && result.versionString !== oldPandocVersionInfo?.versionString) || (!result && result !== oldPandocVersionInfo)) {
+		getPandocInfo(extensionState.config).then((result) => {
+			const oldPandocInfo = extensionState.pandocInfo;
+			extensionState.pandocInfo = result;
+			if ((result && result.versionString !== oldPandocInfo?.versionString) || (!result && result !== oldPandocInfo)) {
 				didShowPandocVersionMessage = false;
 				if (!result) {
 					showPandocMissingError();
@@ -312,11 +315,11 @@ function showPandocVersionMessage(checkModifiedSystem?: boolean) {
 	}
 	didShowPandocVersionMessage = true;
 	let messageArray: Array<string> = [];
-	if (!extensionState.pandocVersionInfo?.isMinVersionRecommended) {
+	if (!extensionState.pandocInfo?.isMinVersionRecommended) {
 		messageArray.push(
-			`Pandoc ${extensionState.pandocVersionInfo?.versionString} is installed, but ${extensionState.pandocVersionInfo?.minVersionRecommendedString}+ is recommended.`,
+			`Pandoc ${extensionState.pandocInfo?.versionString} is installed, but ${extensionState.pandocInfo?.minVersionRecommendedString}+ is recommended.`,
 		);
-		if (!extensionState.pandocVersionInfo?.supportsCodebraidWrappers) {
+		if (!extensionState.pandocInfo?.supportsCodebraidWrappers) {
 			messageArray.push(
 				`Scroll sync will only work for formats commonmark, commonmark_x, and gfm.`,
 				`It will not work for other Markdown variants, or for other formats like Org, LaTeX, and reStructuredText.`,
@@ -329,11 +332,11 @@ function showPandocVersionMessage(checkModifiedSystem?: boolean) {
 
 
 function startPreview() {
-	if (!extensionState.pandocVersionInfo) {
+	if (!extensionState.pandocInfo) {
 		showPandocMissingError(true);
 		return;
 	}
-	if (!extensionState.pandocVersionInfo.isMinVersionRecommended) {
+	if (!extensionState.pandocInfo.isMinVersionRecommended) {
 		showPandocVersionMessage(true);
 	}
 
@@ -457,11 +460,11 @@ function startPreview() {
 
 
 function runCodebraid() {
-	if (!extensionState.pandocVersionInfo) {
+	if (!extensionState.pandocInfo) {
 		showPandocMissingError(true);
 		return;
 	}
-	if (!extensionState.pandocVersionInfo.isMinVersionRecommended) {
+	if (!extensionState.pandocInfo.isMinVersionRecommended) {
 		showPandocVersionMessage(true);
 	}
 
@@ -484,11 +487,11 @@ function runCodebraid() {
 
 
 function exportDocument() {
-	if (!extensionState.pandocVersionInfo) {
+	if (!extensionState.pandocInfo) {
 		showPandocMissingError(true);
 		return;
 	}
-	if (!extensionState.pandocVersionInfo.isMinVersionRecommended) {
+	if (!extensionState.pandocInfo.isMinVersionRecommended) {
 		showPandocVersionMessage(true);
 	}
 

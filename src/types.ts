@@ -8,13 +8,13 @@
 
 import type * as vscode from 'vscode';
 import type { PandocBuildConfigCollections } from './pandoc_build_configs';
-import type { PandocVersionInfo } from './pandoc_version_info';
+import type { PandocInfo } from './pandoc_info';
 
 export type ExtensionState = {
 	'isWindows': boolean,
 	'context': vscode.ExtensionContext,
 	'config': vscode.WorkspaceConfiguration,
-	'pandocVersionInfo': PandocVersionInfo,
+	'pandocInfo': PandocInfo,
 	'pandocBuildConfigCollections': PandocBuildConfigCollections,
 	'normalizedExtraLocalResourceRoots': Array<string>,
 	'resourceRootUris': Array<vscode.Uri>,
