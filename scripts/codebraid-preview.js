@@ -15,6 +15,7 @@ if (codebraidSourceposMetaElement) {
     editorMinLine = Number(codebraidSourceposMetaElement.getAttribute('data-codebraid-sourcepos-min'));
     editorMaxLine = Number(codebraidSourceposMetaElement.getAttribute('data-codebraid-sourcepos-max'));
 }
+let codebraidSourceposMaxElement = codebraidSourceposMetaElement;
 
 
 // Start in state that allows editor to sync its scroll location to the
@@ -28,6 +29,8 @@ let isScrollingPreviewWithEditorTimer = setTimeout(
     },
     100
 );
+
+
 window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.command) {
@@ -88,8 +91,28 @@ window.addEventListener('message', (event) => {
     }
 });
 
-function scrollPreviewWithEditor(startLine) {
 
+const baseElement = document.querySelector('base');
+let pandocDefaultDataDir = baseElement.getAttribute('data-pandocdefaultdatadir');
+let pandocDefaultDataDirAsFileUri = baseElement.getAttribute('data-pandocdefaultdatadirasfileuri');
+let pandocDefaultDataDirAsWebviewUri = baseElement.getAttribute('data-pandocdefaultdatadiraswebviewuri');
+for (const elem of document.querySelectorAll('[href]')) {
+    if (elem.href.startsWith(pandocDefaultDataDir)) {
+        elem.href = pandocDefaultDataDirAsWebviewUri + elem.href.slice(pandocDefaultDataDir.length);
+    } else if (elem.href.startsWith(pandocDefaultDataDirAsFileUri)) {
+        elem.href = pandocDefaultDataDirAsWebviewUri + elem.href.slice(pandocDefaultDataDirAsFileUri.length);
+    }
+}
+for (const elem of document.querySelectorAll('[src]')) {
+    if (elem.src.startsWith(pandocDefaultDataDir)) {
+        elem.src = pandocDefaultDataDirAsWebviewUri + elem.src.slice(pandocDefaultDataDir.length);
+    } else if (elem.src.startsWith(pandocDefaultDataDirAsFileUri)) {
+        elem.src = pandocDefaultDataDirAsWebviewUri + elem.src.slice(pandocDefaultDataDirAsFileUri.length);
+    }
+}
+
+
+function scrollPreviewWithEditor(startLine) {
     let searchLine = Math.min(startLine, editorMaxLine);
     let element = document.getElementById(`codebraid-sourcepos-${searchLine}`);
     if (element) {

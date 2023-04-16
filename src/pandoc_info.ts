@@ -17,6 +17,7 @@ const minPandocVersionCodebraidWrappers: VersionArray = [3, 1, 1];
 export type PandocInfo = {
 	executable: string,
 	extraEnv: {[key: string]: string},
+	defaultDataDir: string | undefined;
 	version: VersionArray,
 	versionString: string,
 	major: number,
@@ -34,44 +35,56 @@ export async function getPandocInfo(config: vscode.WorkspaceConfiguration) : Pro
 	const executable = config.pandoc.executable;
 	const extraEnv = config.pandoc.extraEnv;
 	const args = ['--version'];
-	const maybeVersion: VersionArray | null | undefined = await new Promise<VersionArray | null | undefined>((resolve) => {
+	const maybeVersionAndDataDir = await new Promise<[VersionArray, string | undefined] | null | undefined>((resolve) => {
 		child_process.execFile(executable, args, {shell: true, encoding: 'utf8'}, (error, stdout, stderr) => {
 			if (error) {
 				resolve(undefined);
 			} else {
-				let match = /(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?!\d)/.exec(stdout);
-				if (!match) {
+				let versionMatch = /(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?!\d)/.exec(stdout);
+				if (!versionMatch) {
 					resolve(null);
 				} else {
-					const major = Number(match[1]);
-					const minor = Number(match[2]);
-					const patch = Number(match[3]) || 0;
-					const build = Number(match[4]) || 0;
+					const major = Number(versionMatch[1]);
+					const minor = Number(versionMatch[2]);
+					const patch = Number(versionMatch[3]) || 0;
+					const build = Number(versionMatch[4]) || 0;
 					const version: VersionArray = [major, minor, patch];
 					if (build > 0) {
 						version.push(build);
 					}
-					resolve(version);
+					let dataDirMatch = /User data directory:\s+(\S[^\r\n]*)\r?\n/.exec(stdout);
+					if (!dataDirMatch) {
+						resolve([version, undefined]);
+					} else {
+						let dataDir: string | undefined = dataDirMatch[1].replaceAll('\\', '/');
+						if (dataDir.match(/[\\`^$%"']/)) {
+							dataDir = undefined;
+						}
+						resolve([version, dataDir]);
+					}
 				}
 			}
 		});
 	}).catch((reason: any) => {return undefined;});
-	if (!maybeVersion) {
-		return maybeVersion;
+	if (!maybeVersionAndDataDir) {
+		return maybeVersionAndDataDir;
 	}
+	const version = maybeVersionAndDataDir[0];
+	const defaultDataDir = maybeVersionAndDataDir[1];
 	const pandocInfo = {
 		executable: executable,
 		extraEnv: extraEnv,
-		version: maybeVersion,
-		versionString: versionToString(maybeVersion),
-		major: maybeVersion[0],
-		minor: maybeVersion[1],
-		patch: maybeVersion[2],
-		build: maybeVersion.length < 4 ? undefined : maybeVersion[3],
+		defaultDataDir: defaultDataDir,
+		version: version,
+		versionString: versionToString(version),
+		major: version[0],
+		minor: version[1],
+		patch: version[2],
+		build: version.length < 4 ? undefined : version[3],
 		minVersionRecommended: minPandocVersionRecommended,
 		minVersionRecommendedString: versionToString(minPandocVersionRecommended),
-		isMinVersionRecommended: versionIsAtLeast(maybeVersion, minPandocVersionRecommended),
-		supportsCodebraidWrappers: versionIsAtLeast(maybeVersion, minPandocVersionCodebraidWrappers),
+		isMinVersionRecommended: versionIsAtLeast(version, minPandocVersionRecommended),
+		supportsCodebraidWrappers: versionIsAtLeast(version, minPandocVersionCodebraidWrappers),
 	};
 	return pandocInfo;
 }

@@ -98,6 +98,10 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 	const pandocBuildConfigCollections = new PandocBuildConfigCollections(context);
 	context.subscriptions.push(pandocBuildConfigCollections);
 	await pandocBuildConfigCollections.update(config);
+	const resourceRootUris = resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root)));
+	if (config.security.pandocDefaultDataDirIsResourceRoot && pandocInfo?.defaultDataDir) {
+		resourceRootUris.push(vscode.Uri.file(pandocInfo.defaultDataDir));
+	}
 	extensionState = {
 		isWindows: isWindows,
 		context: context,
@@ -105,7 +109,7 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 		pandocInfo: pandocInfo,
 		pandocBuildConfigCollections: pandocBuildConfigCollections,
 		normalizedExtraLocalResourceRoots: normalizeExtraLocalResourceRoots(config),
-		resourceRootUris: resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root))),
+		resourceRootUris: resourceRootUris,
 		log: log,
 		statusBarItems: {
 			openPreview: openPreviewStatusBarItem,
@@ -156,22 +160,31 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 	vscode.workspace.onDidChangeConfiguration(
 		async () => {
 			const nextConfig = vscode.workspace.getConfiguration('codebraid.preview');
+
 			if (nextConfig.pandoc.executable !== extensionState.pandocInfo?.executable) {
 				extensionState.pandocInfo = await getPandocInfo(nextConfig);
-				extensionState.config = nextConfig;
-				extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
 				if (!extensionState.pandocInfo) {
 					showPandocMissingError();
 				} else if (!extensionState.pandocInfo.isMinVersionRecommended) {
 					showPandocVersionMessage();
 				}
-			} else {
-				if (extensionState.pandocInfo) {
-					extensionState.pandocInfo.extraEnv = nextConfig.pandoc.extraEnv;
-				}
-				extensionState.config = nextConfig;
-				extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
+			} else if (extensionState.pandocInfo) {
+				extensionState.pandocInfo.extraEnv = nextConfig.pandoc.extraEnv;
 			}
+
+			extensionState.config = nextConfig;
+			const nextResourceRootUris = resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root)));
+			if (extensionState.config.security.pandocDefaultDataDirIsResourceRoot && extensionState.pandocInfo?.defaultDataDir) {
+				nextResourceRootUris.push(vscode.Uri.file(extensionState.pandocInfo.defaultDataDir));
+			}
+			if (extensionState.resourceRootUris.length !== nextResourceRootUris.length) {
+				vscode.window.showInformationMessage([
+					'Extension setting "security.pandocDefaultDataDirIsResourceRoot" has changed.',
+					'This will not affect preview panels until they are closed and reopened.',
+				].join(' '));
+			}
+			extensionState.resourceRootUris = nextResourceRootUris;
+			extensionState.normalizedExtraLocalResourceRoots = normalizeExtraLocalResourceRoots(extensionState.config);
 			extensionState.pandocBuildConfigCollections.update(extensionState.config, updatePreviewConfigurations);
 		},
 		null,
@@ -296,7 +309,8 @@ function showPandocMissingError(checkModifiedSystem?: boolean) {
 let didShowPandocVersionMessage: boolean = false;
 function showPandocVersionMessage(checkModifiedSystem?: boolean) {
 	if (checkModifiedSystem) {
-		// Update version info for future in case system has been modified
+		// Update version info for future in case system has been modified.
+		// This assumes that default user data dir is unchanged.
 		getPandocInfo(extensionState.config).then((result) => {
 			const oldPandocInfo = extensionState.pandocInfo;
 			extensionState.pandocInfo = result;

@@ -386,7 +386,12 @@ detected by checking `node.attributes['data-pos'] ~= nil`.
 
 The HTML preview is displayed using a webview.  These settings determine which
 local and remote resources, such as images and scripts, can be loaded by the
-webview.  By default, all remote resources are disabled.  By default, local
+webview.  **These settings only determine the resources that the webview can
+load.  They do not affect the resources that Pandoc can access or determine
+which resources Pandoc can embed in the HTML preview document (see note
+below).**
+
+By default, all remote resources are disabled.  By default, local
 resources can only be loaded from the current workspace folders and the
 document directory.  Additional local locations can be added via
 `security.extraLocalResourceRoots`.  All types of local resources are
@@ -397,6 +402,18 @@ Scripting capabilities should only be enabled when using documents that you
 trust.  Styles (CSS), particularly when combined with images/media or fonts,
 can also have security implications, especially when remote resources are
 involved.
+
+**Note on limitations of security settings**:  Many security settings
+determine which resources the webview can load.  However, the Pandoc option
+`--embed-resources` uses `data:` URIs to incorporate the contents of linked
+scripts, stylesheets, images, and videos directly into the HTML.  If you
+choose to use `--embed-resources`, be aware that this makes these security
+settings irrelevant, since content is embedded in the HTML rather than being
+loaded from a local or remote source.  Similarly, `--extract-media` makes most
+image and media security settings irrelevant, because it copies or downloads
+all images and media to a local temp directory that is accessible by default.
+`--extract-media` is required to preview Jupyter notebooks and is
+automatically enabled only for that case.
 
 * `codebraid.preview.security.allowInlineScripts` [`false`]:  Allow the
   preview to use inline scripts `<script>...</script>`.  (Scripts bundled as
@@ -441,14 +458,27 @@ involved.
   to load styles from remote locations via https.
 
 * `codebraid.preview.security.extraLocalResourceRoots` [none]:  Additional
-   root paths from which the preview can load local (filesystem) resources,
-   such as images.  These are in addition to the current workspace folders and
-   the document directory.
+  root paths from which the preview can load local (filesystem) resources,
+  such as images and CSS.  These are in addition to the current workspace
+  folders, the document directory, and the default Pandoc user data directory
+  (if enabled via `security.pandocDefaultDataDirIsResourceRoot`).
 
-   Paths may be absolute or relative.  In absolute paths, a leading `~/` is
-   expanded to the user's home directory.  Relative paths are relative to the
-   document file; for example, `../images` refers to an `images` directory one
-   level up from the document.
+  Paths may be absolute or relative.  In absolute paths, a leading `~/` is
+  expanded to the user's home directory.  Relative paths are relative to the
+  document file; for example, `../images` refers to an `images` directory one
+  level up from the document.  For setting `extraLocalResourceRoots` paths,
+  either absolute or relative paths are fine.  Within a document, relative
+  paths should be preferred because they will automatically work with the
+  preview's webview.  If you use absolute paths, you will typically need to
+  build a document with `--embed-resources` for resources to load correctly.
+
+* `codebraid.preview.security.pandocDefaultDataDirIsResourceRoot` [`true`].
+  Add the default Pandoc user data directory to the root paths from which the
+  preview can load local (filesystem) resources, such as images and CSS.  See
+  `--data-dir` in the
+  [Pandoc documentation](https://pandoc.org/MANUAL.html#general-options) for
+  details about the data directory.  See the output of `pandoc --version` for
+  the location of the data directory on your system.
 
 
 ## Codebraid configuration

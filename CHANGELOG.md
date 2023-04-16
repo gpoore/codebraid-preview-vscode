@@ -3,9 +3,31 @@
 
 # v0.15.0 (dev)
 
-* Added setting `codebraid.preview.pandoc.executable` (#17).
+* Added setting `codebraid.preview.pandoc.executable` (#17).  This allows
+  customizing the location of the Pandoc executable, or using a wrapper
+  script.
 
-* Added setting `codebraid.preview.pandoc.extraEnv` (#17).
+* Added setting `codebraid.preview.pandoc.extraEnv` (#17).  This allows
+  setting additional environment variables for the Pandoc subprocess.
+
+* Added setting
+  `codebraid.preview.security.pandocDefaultDataDirIsResourceRoot` (#17).
+  This allows the preview to load resources like images and CSS from
+  the default Pandoc user data directory.
+
+* The preview now automatically converts local `file:` URIs that point to the
+  default Pandoc user data directory into VS Code webview URIs
+  (`webview.asWebviewUri()`) that can be loaded within the webview.  This only
+  works when `codebraid.preview.security.pandocDefaultDataDirIsResourceRoot`
+  is enabled (default).
+
+* The Pandoc option `--extract-media` is no longer used to create the preview,
+  unless the document is a Jupyter notebook.  This option was added in v0.14.0
+  to support Jupyter notebooks, but it creates unnecessary temp image files
+  for non-notebook documents.
+
+* Added details in README under Security about the implications of the Pandoc
+  options `--embed-resources` and `--extract-media`.
 
 
 

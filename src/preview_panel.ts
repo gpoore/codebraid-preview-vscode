@@ -12,6 +12,7 @@ import * as child_process from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as url from 'url';
 
 import type { ExtensionState } from './types';
 import type { PandocInfo } from './pandoc_info';
@@ -257,7 +258,18 @@ export default class PreviewPanel implements vscode.Disposable {
 		for (const [key, value] of Object.entries(pandocResources)) {
 			this.pandocResourcePaths[key] = this.extension.context.asAbsolutePath(value);
 		}
-		this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
+		if (this.extension.pandocInfo?.defaultDataDir) {
+			this.baseTag = [
+				`<base`,
+				`href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/"`,
+				`data-pandocdefaultdatadir="${this.convertStringToLiteralHtml(this.extension.pandocInfo.defaultDataDir)}"`,
+				`data-pandocdefaultdatadirasfileuri="${this.convertStringToLiteralHtml(url.pathToFileURL(this.extension.pandocInfo.defaultDataDir).toString())}"`,
+				`data-pandocdefaultdatadiraswebviewuri="${this.convertStringToLiteralHtml(this.panel.webview.asWebviewUri(vscode.Uri.file(this.extension.pandocInfo.defaultDataDir)).toString())}"`,
+				`>`,
+			].join(' ');
+		} else {
+			this.baseTag = `<base href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/">`;
+		}
 		this.contentSecurityNonce = this.getContentSecurityNonce();
 		this.usingContentSecurityNonce = false;
 		this.contentSecurityTag = this.getContentSecurityTag();
@@ -277,8 +289,10 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--standalone`,
 			`--lua-filter="${this.pandocResourcePaths.sourceposSyncFilter}"`,
 			`--katex=${this.webviewResourceUris.katex}/`,
-			`--extract-media="${extractedMediaDirectory}/${this.cacheKey}"`,
 		];
+		if (this.isNotebook) {
+			this.pandocPreviewArgs.push(`--extract-media="${extractedMediaDirectory}/${this.cacheKey}"`);
+		}
 		this.pandocCssArgs = [
 			`--css=${this.webviewResourceUris.vscodeCss}`,
 			`--css=${this.webviewResourceUris.vscodeCodicon}`,
@@ -360,8 +374,6 @@ export default class PreviewPanel implements vscode.Disposable {
 			);
 		}
 
-
-
 		this.updateConfiguration();
 	}
 
@@ -393,10 +405,12 @@ export default class PreviewPanel implements vscode.Disposable {
 			this.onDisposeExtensionCallback();
 			this.onDisposeExtensionCallback = undefined;
 		}
-		fs.promises.rm(
-			path.join(this.cwd, extractedMediaDirectory, this.cacheKey),
-			{force: true, recursive: true}
-		);
+		if (this.isNotebook) {
+			fs.promises.rm(
+				path.join(this.cwd, extractedMediaDirectory, this.cacheKey),
+				{force: true, recursive: true}
+			);
+		}
 	}
 
 	async updateConfiguration() {

@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.15.0-dev2",
+  "version": "0.15.0-dev3",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -330,7 +330,12 @@
             "patternErrorMessage": "A leading ~ is only allowed when followed by a path separator."
           },
           "default": [],
-          "description": "Additional root paths from which the preview can load local (filesystem) resources, such as images.  These are in addition to the current workspace folders and the document directory."
+          "description": "Additional root paths from which the preview can load local (filesystem) resources, such as images and CSS.  These are in addition to the current workspace folders and the document directory."
+        },
+        "codebraid.preview.security.pandocDefaultDataDirIsResourceRoot": {
+          "type": "boolean",
+          "default": true,
+          "description": "Add the default Pandoc user data directory to the root paths from which the preview can load local (filesystem) resources, such as images and CSS."
         }
       }
     }
