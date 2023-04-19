@@ -405,9 +405,10 @@ load.  They do not affect the resources that Pandoc can access or determine
 which resources Pandoc can embed in the HTML preview document (see note
 below).**
 
-By default, all remote resources are disabled.  By default, local
-resources can only be loaded from the current workspace folders and the
-document directory.  Additional local locations can be added via
+By default, all remote resources are disabled.  By default, local resources
+can only be loaded from the current workspace folders, the document directory,
+and the default Pandoc user data directory (see output of `pandoc --version`
+for location).  Additional local locations can be added via
 `security.extraLocalResourceRoots`.  All types of local resources are
 permitted by default except for scripts.  Inline scripts are also not
 permitted by default, except for those bundled as part of the extension.
@@ -470,27 +471,37 @@ automatically enabled only for that case.
 *Local*
 
 * `codebraid.preview.security.allowLocalFonts` [`true`]:  Allow the preview to
-  load fonts from the current workspace folder, the document directory, and
-  any other locations specified in `security.extraLocalResourceRoots`.  (Fonts
-  bundled as part of the extension are always allowed.)
+  load fonts from the current workspace folder, the document directory, the
+  default Pandoc user data directory (if enabled via
+  `security.pandocDefaultDataDirIsResourceRoot`), and any other locations
+  specified in `security.extraLocalResourceRoots`.  (Fonts bundled as part of
+  the extension are always allowed.)
 
-* `codebraid.preview.security.allowLocalImages` [`true`]:  Allow the preview to
-  load images from the current workspace folder, the document directory, and
-  any other locations specified in `security.extraLocalResourceRoots`.
+* `codebraid.preview.security.allowLocalImages` [`true`]:  Allow the preview
+  to load images from the current workspace folder, the document directory,
+  the default Pandoc user data directory (if enabled via
+  `security.pandocDefaultDataDirIsResourceRoot`), and any other locations
+  specified in `security.extraLocalResourceRoots`.
 
 * `codebraid.preview.security.allowLocalMedia` [`true`]:  Allow the preview to
-  load media from the current workspace folder, the document directory, and
-  any other locations specified in `security.extraLocalResourceRoots`.
+  load media from the current workspace folder, the document directory, the
+  default Pandoc user data directory (if enabled via
+  `security.pandocDefaultDataDirIsResourceRoot`), and any other locations
+  specified in `security.extraLocalResourceRoots`.
 
 * `codebraid.preview.security.allowLocalScripts` [`false`]:  Allow the preview
   to load scripts from the current workspace folder, the document directory,
-  and any other locations specified in `security.extraLocalResourceRoots`.
-  (Scripts bundled as part of the extension are always allowed.)
+  the default Pandoc user data directory (if enabled via
+  `security.pandocDefaultDataDirIsResourceRoot`), and any other locations
+  specified in `security.extraLocalResourceRoots`.  (Scripts bundled as part
+  of the extension are always allowed.)
 
 * `codebraid.preview.security.allowLocalStyles` [`true`]:  Allow the preview
   to load styles from the current workspace folder, the document directory,
-  and any other locations specified in `security.extraLocalResourceRoots`.
-  (Styles bundled as part of the extension are always allowed.)
+  the default Pandoc user data directory (if enabled via
+  `security.pandocDefaultDataDirIsResourceRoot`), and any other locations
+  specified in `security.extraLocalResourceRoots`.  (Styles bundled as part of
+  the extension are always allowed.)
 
 *Remote*
 
