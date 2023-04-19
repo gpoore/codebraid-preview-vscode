@@ -26,6 +26,17 @@
   to support Jupyter notebooks, but it creates unnecessary temp image files
   for non-notebook documents.
 
+* The preview now provides partial support for the Pandoc option
+  `--embed-resources`.  As part of this, added new settings
+  `codebraid.preview.security.allowEmbedded*`.
+
+* Added settings under `codebraid.preview.security`:  `allowEmbeddedFonts`,
+  `allowEmbeddedImages`, `allowEmbeddedMedia`, `allowEmbeddedScripts`,
+  `allowEmbeddedStyles`.  These determine whether the preview webview's
+  content security policy allows `data:` URLs.  All are `true` by default
+  except for `allowEmbeddedScripts`.  That is, the preview now automatically
+  loads embedded fonts, images, media, and styles.
+
 * Added details in README under Security about the implications of the Pandoc
   options `--embed-resources` and `--extract-media`.
 

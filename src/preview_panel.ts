@@ -43,6 +43,7 @@ type PandocPreviewOptions = {
 	reader: PandocReader | undefined;
 	writer: PandocWriter | undefined;
 	fileScope: boolean | undefined;
+	embedResources: boolean | undefined;
 };
 
 type ScrollSyncData = {
@@ -133,6 +134,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	panel: vscode.WebviewPanel | undefined;
 	extensionResourceWebviewRoots: Array<string>;
 	webviewResourceUris: Record<string, vscode.Uri>;
+	webviewResourceUrisEmbed: Record<string, string>;
 	pandocResourcePaths: Record<string, string>;
 	baseTag: string;
 	contentSecurityNonce: string;
@@ -156,7 +158,9 @@ export default class PreviewPanel implements vscode.Disposable {
 	// Subprocess
 	// ----------
 	pandocPreviewArgs: Array<string>;
+	pandocPreviewArgsEmbed: Array<string>;
 	pandocCssArgs: Array<string>;
+	pandocCssArgsEmbed: Array<string>;
 	pandocShowRawArgs: Array<string>;
 	pandocWithCodebraidOutputArgs: Array<string>;
 	pandocExportArgs: Array<string>;
@@ -249,22 +253,28 @@ export default class PreviewPanel implements vscode.Disposable {
 			);
 		}
 		this.webviewResourceUris = {};
+		this.webviewResourceUrisEmbed = {};
 		for (const [key, resource] of Object.entries(webviewResources)) {
 			this.webviewResourceUris[key] = this.panel.webview.asWebviewUri(
 				vscode.Uri.file(this.extension.context.asAbsolutePath(resource))
 			);
+			this.webviewResourceUrisEmbed[key] = url.pathToFileURL(this.extension.context.asAbsolutePath(resource)).toString();
 		}
 		this.pandocResourcePaths = {};
 		for (const [key, value] of Object.entries(pandocResources)) {
 			this.pandocResourcePaths[key] = this.extension.context.asAbsolutePath(value);
 		}
 		if (this.extension.pandocInfo?.defaultDataDir) {
+			const dataDir = this.extension.pandocInfo.defaultDataDir;
+			const pandocDefaultDataDir = this.convertStringToLiteralHtml(dataDir);
+			const pandocDefaultDataDirAsFileUri = this.convertStringToLiteralHtml(url.pathToFileURL(dataDir).toString());
+			const pandocDefaultDataDirAsWebviewUri = this.convertStringToLiteralHtml(this.panel.webview.asWebviewUri(vscode.Uri.file(dataDir)).toString());
 			this.baseTag = [
 				`<base`,
 				`href="${this.panel.webview.asWebviewUri(vscode.Uri.file(this.cwd))}/"`,
-				`data-pandocdefaultdatadir="${this.convertStringToLiteralHtml(this.extension.pandocInfo.defaultDataDir)}"`,
-				`data-pandocdefaultdatadirasfileuri="${this.convertStringToLiteralHtml(url.pathToFileURL(this.extension.pandocInfo.defaultDataDir).toString())}"`,
-				`data-pandocdefaultdatadiraswebviewuri="${this.convertStringToLiteralHtml(this.panel.webview.asWebviewUri(vscode.Uri.file(this.extension.pandocInfo.defaultDataDir)).toString())}"`,
+				`data-pandocdefaultdatadir="${pandocDefaultDataDir}"`,
+				`data-pandocdefaultdatadirasfileuri="${pandocDefaultDataDirAsFileUri}"`,
+				`data-pandocdefaultdatadiraswebviewuri="${pandocDefaultDataDirAsWebviewUri}"`,
 				`>`,
 			].join(' ');
 		} else {
@@ -290,14 +300,22 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--lua-filter="${this.pandocResourcePaths.sourceposSyncFilter}"`,
 			`--katex=${this.webviewResourceUris.katex}/`,
 		];
+		this.pandocPreviewArgsEmbed = [
+			...this.pandocPreviewArgs.filter(elem => !elem.startsWith('--katex')),
+			`--katex=${this.webviewResourceUrisEmbed.katex}/`,
+		];
 		if (this.isNotebook) {
 			this.pandocPreviewArgs.push(`--extract-media="${extractedMediaDirectory}/${this.cacheKey}"`);
+			// Not needed for embed
 		}
-		this.pandocCssArgs = [
-			`--css=${this.webviewResourceUris.vscodeCss}`,
-			`--css=${this.webviewResourceUris.vscodeCodicon}`,
-			`--css=${this.webviewResourceUris.codebraidCss}`,
-		];
+		this.pandocCssArgs = [];
+		this.pandocCssArgsEmbed = [];
+		for (const key of Object.keys(this.webviewResourceUris)) {
+			if (key.endsWith('Css')) {
+				this.pandocCssArgs.push(`--css=${this.webviewResourceUris[key]}`);
+				this.pandocCssArgsEmbed.push(`--css=${this.webviewResourceUrisEmbed[key]}`);
+			}
+		}
 		this.pandocShowRawArgs = [
 			`--lua-filter="${this.pandocResourcePaths.showRawFilter}"`,
 		];
@@ -537,6 +555,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		let reader: PandocReader | undefined;
 		let writer: PandocWriter | undefined;
 		let fileScope: boolean | undefined;
+		let embedResources: boolean | undefined;
 
 		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.hasReader) {
 			reader = this.documentPandocDefaultsFile.data.extractedReader;
@@ -563,6 +582,33 @@ export default class PreviewPanel implements vscode.Disposable {
 		if (previewBuildConfig && previewBuildConfig.optionsFileScope !== undefined) {
 			fileScope = previewBuildConfig.optionsFileScope;
 		}
+		// `--embed-resources` option currently exists, but `embed-resources`
+		// default does not.  Support the default in case Pandoc adds it in
+		// the future.  Pandoc will raise an error for unknown defaults.
+		// Support deprecated `self-contained` as well.  Only handle the case
+		// `self-contained` set to `true`, after handling `embed-resources`,
+		// so that resources are embedded if either is set `true` at a given
+		// precedence level.
+		if (previewBuildConfig && typeof(previewBuildConfig.defaults['embed-resources']) === 'boolean') {
+			embedResources = previewBuildConfig.defaults['embed-resources'];
+		}
+		if (previewBuildConfig && previewBuildConfig.defaults['self-contained'] === true) {
+			embedResources = true;
+		}
+		if (this.documentPandocDefaultsFile.isRelevant && this.documentPandocDefaultsFile.data?.yaml) {
+			if (typeof(this.documentPandocDefaultsFile.data.yaml['embed-resources']) === 'boolean') {
+				embedResources = this.documentPandocDefaultsFile.data.yaml['embed-resources'];
+			}
+			if (this.documentPandocDefaultsFile.data.yaml['self-contained'] === true) {
+				embedResources = true;
+			}
+		}
+		if (previewBuildConfig && previewBuildConfig.options.indexOf('--embed-resources') !== -1) {
+			embedResources = true;
+		}
+		if (previewBuildConfig && previewBuildConfig.options.indexOf('--self-contained') !== -1) {
+			embedResources = true;
+		}
 
 		if (fileScope && !reader?.canFileScope) {
 			const message = [];
@@ -586,6 +632,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			reader: reader,
 			writer: writer,
 			fileScope: fileScope,
+			embedResources: embedResources,
 		};
 		this.update();
 	}
@@ -671,6 +718,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			if (security.allowRemoteFonts) {
 				fontSrc.push('https:');
 			}
+			if (security.allowEmbeddedFonts) {
+				fontSrc.push('data:');
+			}
 		}
 		// img-src
 		{
@@ -683,6 +733,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			}
 			if (security.allowRemoteImages) {
 				imgSrc.push('https:');
+			}
+			if (security.allowEmbeddedImages) {
+				imgSrc.push('data:');
 			}
 		}
 		// media-src
@@ -697,6 +750,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			if (security.allowRemoteMedia) {
 				mediaSrc.push('https:');
 			}
+			if (security.allowEmbeddedMedia) {
+				mediaSrc.push('data:');
+			}
 		}
 		// style-src
 		{
@@ -709,6 +765,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			}
 			if (security.allowRemoteStyles) {
 				styleSrc.push('https:');
+			}
+			if (security.allowEmbeddedStyles) {
+				styleSrc.push('data:');
 			}
 		}
 		// script-src
@@ -729,6 +788,9 @@ export default class PreviewPanel implements vscode.Disposable {
 			}
 			if (security.allowRemoteScripts) {
 				scriptSrc.push('https:');
+			}
+			if (security.allowEmbeddedScripts) {
+				scriptSrc.push('data:');
 			}
 		}
 
@@ -767,7 +829,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	${this.contentSecurityTag}
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<link rel="stylesheet" href="${this.webviewResourceUris.vscodeCss}">
-	<link rel="stylesheet" href="${this.webviewResourceUris.vscodeCodicon}">
+	<link rel="stylesheet" href="${this.webviewResourceUris.vscodeCodiconCss}">
 	<link rel="stylesheet" href="${this.webviewResourceUris.codebraidCss}">
 	${this.codebraidPreviewJsTag}
 	<style>
@@ -1452,7 +1514,11 @@ ${message}
 		const executable: string = this.pandocInfo.executable;
 		const args: Array<string> = [];
 		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
-			args.push(...this.pandocCssArgs);
+			if (this.pandocPreviewOptions.embedResources) {
+				args.push(...this.pandocCssArgsEmbed);
+			} else {
+				args.push(...this.pandocCssArgs);
+			}
 		}
 		if (this.pandocPreviewBuildConfig?.defaultsFileName) {
 			// This needs quoting, since it involves an absolute path
@@ -1466,9 +1532,17 @@ ${message}
 			args.push('--defaults', `"${this.documentPandocDefaultsFile.processedFileName}"`);
 		}
 		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
-			args.push(...this.pandocCssArgs);
+			if (this.pandocPreviewOptions.embedResources) {
+				args.push(...this.pandocCssArgsEmbed);
+			} else {
+				args.push(...this.pandocCssArgs);
+			}
 		}
-		args.push(...this.pandocPreviewArgs);
+		if (this.pandocPreviewOptions.embedResources) {
+			args.push(...this.pandocPreviewArgsEmbed);
+		} else {
+			args.push(...this.pandocPreviewArgs);
+		}
 		if (this.extension.config.pandoc.showRaw) {
 			args.push(...this.pandocShowRawArgs);
 		}
@@ -1859,7 +1933,11 @@ ${message}
 			args.push('--no-execute');
 		}
 		if (this.extension.config.css.useDefault && this.extension.config.css.overrideDefault) {
-			args.push(...this.pandocCssArgs);
+			if (this.pandocPreviewOptions.embedResources) {
+				args.push(...this.pandocCssArgsEmbed);
+			} else {
+				args.push(...this.pandocCssArgs);
+			}
 		}
 		if (this.pandocPreviewBuildConfig?.defaultsFileName) {
 			// This needs quoting, since it involves an absolute path
@@ -1873,11 +1951,19 @@ ${message}
 			args.push('--defaults', `"${this.documentPandocDefaultsFile.processedFileName}"`);
 		}
 		if (this.extension.config.css.useDefault && !this.extension.config.css.overrideDefault) {
-			args.push(...this.pandocCssArgs);
+			if (this.pandocPreviewOptions.embedResources) {
+				args.push(...this.pandocCssArgsEmbed);
+			} else {
+				args.push(...this.pandocCssArgs);
+			}
 		}
 		// If Codebraid adds a --pre-filter or similar option, that would need
 		// to be handled here.
-		args.push(...this.pandocPreviewArgs);
+		if (this.pandocPreviewOptions.embedResources) {
+			args.push(...this.pandocPreviewArgsEmbed);
+		} else {
+			args.push(...this.pandocPreviewArgs);
+		}
 		if (this.pandocPreviewOptions.reader) {
 			args.push('--from', this.pandocPreviewOptions.reader.asCodebraidArg);
 		}

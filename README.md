@@ -267,6 +267,20 @@ only remove them if empty.  For example, in a Lua filter these nodes can be
 detected by checking `node.attributes['data-pos'] ~= nil`.
 
 
+## Known limitations
+
+Some Pandoc options have limited preview support or require special settings.
+
+* `--embed-resources`:  Version 0.15.0 added support for `--embed-resources`
+  (and deprecated `--self-contained`).  This option may not work when the path
+  to the VS Code extension installation location contains spaces.  Currently,
+  the setting `codebraid.preview.security.allowEmbeddedScripts` must be
+  enabled for some features that rely on JavaScript, such as KaTeX math.
+  Note that when using `--embed-resources`, setting `allowEmbeddedScripts` to
+  `true` effectively allows *all* JavaScript, so this should only be used with
+  documents that you trust.
+
+
 ## Extension settings
 
 ### Document build and display
@@ -415,9 +429,45 @@ all images and media to a local temp directory that is accessible by default.
 `--extract-media` is required to preview Jupyter notebooks and is
 automatically enabled only for that case.
 
+*Inline*
+
 * `codebraid.preview.security.allowInlineScripts` [`false`]:  Allow the
   preview to use inline scripts `<script>...</script>`.  (Scripts bundled as
   part of the extension are always allowed.)
+
+*Embedded*
+
+* `codebraid.preview.security.allowEmbeddedFonts` [`true`]:  Allow the preview
+  to load fonts from `data:` URLs.  This is helpful when using
+  `--embed-resources` (or deprecated `--self-contained`) to embed resources in
+  the preview document rather than loading them from local or remote
+  locations.
+
+* `codebraid.preview.security.allowEmbeddedImages` [`true`]:  Allow the
+  preview to load images from `data:` URLs.  This is helpful when using
+  `--embed-resources` (or deprecated `--self-contained`) to embed resources in
+  the preview document rather than loading them from local or remote
+  locations.
+
+* `codebraid.preview.security.allowEmbeddedMedia` [`true`]:  Allow the preview
+  to load media from `data:` URLs.  This is helpful when using
+  `--embed-resources` (or deprecated `--self-contained`) to embed resources in
+  the preview document rather than loading them from local or remote
+  locations.
+
+* `codebraid.preview.security.allowEmbeddedScripts` [`false`]:  Allow the
+  preview to load scripts from `data:` URLs.  This is helpful when using
+  `--embed-resources` (or deprecated `--self-contained`) to embed resources in
+  the preview document rather than loading them from local or remote
+  locations.
+
+* `codebraid.preview.security.allowEmbeddedStyles` [`true`]:  Allow the
+  preview to load styles from `data:` URLs.  This is helpful when using
+  `--embed-resources` (or deprecated `--self-contained`) to embed resources in
+  the preview document rather than loading them from local or remote
+  locations.
+
+*Local*
 
 * `codebraid.preview.security.allowLocalFonts` [`true`]:  Allow the preview to
   load fonts from the current workspace folder, the document directory, and
@@ -442,6 +492,8 @@ automatically enabled only for that case.
   and any other locations specified in `security.extraLocalResourceRoots`.
   (Styles bundled as part of the extension are always allowed.)
 
+*Remote*
+
 * `codebraid.preview.security.allowRemoteFonts` [`false`]:  Allow the preview
   to load fonts from remote locations via https.
 
@@ -456,6 +508,8 @@ automatically enabled only for that case.
 
 * `codebraid.preview.security.allowRemoteStyles` [`false`]:  Allow the preview
   to load styles from remote locations via https.
+
+*Resource roots*
 
 * `codebraid.preview.security.extraLocalResourceRoots` [none]:  Additional
   root paths from which the preview can load local (filesystem) resources,

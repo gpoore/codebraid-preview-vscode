@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.15.0-dev3",
+  "version": "0.15.0-dev4",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -270,6 +270,31 @@
           "type": "boolean",
           "default": false,
           "description": "Allow the preview to use inline scripts <script>...</script>.  (Scripts bundled as part of the extension are always allowed.)"
+        },
+        "codebraid.preview.security.allowEmbeddedFonts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load fonts from `data:` URLs.  This is helpful when using `--embed-resources` (or deprecated `--self-contained`) to embed resources in the preview document rather than loading them from local or remote locations."
+        },
+        "codebraid.preview.security.allowEmbeddedImages": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load images from `data:` URLs.  This is helpful when using `--embed-resources` (or deprecated `--self-contained`) to embed resources in the preview document rather than loading them from local or remote locations."
+        },
+        "codebraid.preview.security.allowEmbeddedMedia": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load media from `data:` URLs.  This is helpful when using `--embed-resources` (or deprecated `--self-contained`) to embed resources in the preview document rather than loading them from local or remote locations."
+        },
+        "codebraid.preview.security.allowEmbeddedScripts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the preview to load scripts from `data:` URLs.  This is helpful when using `--embed-resources` (or deprecated `--self-contained`) to embed resources in the preview document rather than loading them from local or remote locations."
+        },
+        "codebraid.preview.security.allowEmbeddedStyles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the preview to load styles from `data:` URLs.  This is helpful when using `--embed-resources` (or deprecated `--self-contained`) to embed resources in the preview document rather than loading them from local or remote locations."
         },
         "codebraid.preview.security.allowLocalFonts": {
           "type": "boolean",

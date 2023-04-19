@@ -16,7 +16,7 @@ export const resourceRoots: Array<string> = [
 
 export const webviewResources: {[key: string]: string} = {
     katex: 'node_modules/katex/dist',
-    vscodeCodicon: 'node_modules/@vscode/codicons/dist/codicon.css',
+    vscodeCodiconCss: 'node_modules/@vscode/codicons/dist/codicon.css',
     vscodeCss: 'media/vscode-markdown.css',
     codebraidCss: 'media/codebraid-preview.css',
     codebraidPreviewJs: 'scripts/codebraid-preview.js',
