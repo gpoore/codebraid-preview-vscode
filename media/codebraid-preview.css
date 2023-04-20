@@ -338,8 +338,11 @@ div.codebraid-alert-icon::before {
     font-family: "codicon";
     font-size: x-large;
     font-weight: 500;
-    content: "\EA6C";
+    content: "\EB26";
     padding: 0.25em;
+}
+div.codebraid-alert-icon.codebraid-alert-icon-warning::before {
+    content: "\EA6C";
 }
 div.codebraid-alert-icon:hover + div.codebraid-temp-alert-stderr {
     visibility: visible;

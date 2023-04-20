@@ -93,6 +93,9 @@ window.addEventListener('message', (event) => {
                     alertDiv.classList.add('codebraid-temp-alert-stderr');
                     const warningIconDiv = document.createElement('div');
                     warningIconDiv.classList.add('codebraid-alert-icon');
+                    if (message.isWarning) {
+                        warningIconDiv.classList.add('codebraid-alert-icon-warning');
+                    }
                     document.body.append(warningIconDiv);
                     break;
                 }

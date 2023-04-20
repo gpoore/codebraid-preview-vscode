@@ -1665,14 +1665,16 @@ ${message}
 						// output format, a warning will be raised during
 						// export.
 						stderr = stderr.replace(/(?:^|(?<=\n))\[WARNING\] This document format requires a nonempty <title> element\.\s*?\r?\n\s+?\S.*?\r?\n\s+?\S.*?(?:\r?\n|$)/, '');
-						if (this.extension.config.pandoc.showStderr === 'warning' && stderr.toLowerCase().indexOf('warning') === -1) {
+						const isWarning: boolean = stderr.toLowerCase().indexOf('warning') !== -1;
+						if (this.extension.config.pandoc.showStderr === 'warning' && !isWarning) {
 							stderr = '';
 						}
 						if (stderr) {
 							this.panel.webview.postMessage({
 								command: 'codebraidPreview.tempAlert',
 								tempAlert: `<pre data-codebraid-title="stderr">${this.convertStringToLiteralHtml(stderr)}</pre>\n`,
-								alertType: 'stderr'
+								alertType: 'stderr',
+								isWarning: isWarning,
 							});
 						}
 					}
