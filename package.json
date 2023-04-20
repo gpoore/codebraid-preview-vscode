@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.15.0-dev4",
+  "version": "0.15.0-dev5",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -265,6 +265,12 @@
           "type": "boolean",
           "default": true,
           "description": "Display a verbatim representation of non-HTML raw content `{=format}` in the preview."
+        },
+        "codebraid.preview.pandoc.showStderr": {
+          "type": "string",
+          "enum": ["never", "warning", "always"],
+          "default": "always",
+          "description": "Display a notification in the preview when Pandoc completes without errors but its stderr is non-empty (there are always notifications for errors).  \"never\": no display.  \"warning\": display only when stderr contains the word \"warning\" (case insensitive).  \"always\": always display regardless of content."
         },
         "codebraid.preview.security.allowInlineScripts": {
           "type": "boolean",

@@ -15,6 +15,10 @@
   This allows the preview to load resources like images and CSS from
   the default Pandoc user data directory.
 
+* Added setting `codebraid.preview.pandoc.showStderr` (#17).  This allows the
+  preview to display a notification when Pandoc completes without errors, but
+  stderr is non-empty.
+
 * The preview now automatically converts local `file:` URIs that point to the
   default Pandoc user data directory into VS Code webview URIs
   (`webview.asWebviewUri()`) that can be loaded within the webview.  This only

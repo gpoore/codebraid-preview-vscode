@@ -396,6 +396,14 @@ Some Pandoc options have limited preview support or require special settings.
   representation of non-HTML raw content (Pandoc Markdown `{=format}`) in the
   preview.
 
+* `codebraid.preview.pandoc.showStderr` [`always`]:  Display a notification in
+  the preview when Pandoc completes without errors but its stderr is
+  non-empty (there are always notifications for errors).  Accepted values:
+    - `never`: no display
+    - `warning`: display only when stderr contains the word "warning" (case
+      insensitive)
+    - `always`: always display regardless of content
+
 ### Security
 
 The HTML preview is displayed using a webview.  These settings determine which

@@ -150,7 +150,6 @@ export default class PreviewPanel implements vscode.Disposable {
 	isShowingUpdatingMessage: boolean;
 	isShowingErrorMessage: boolean;
 	updateTimer: NodeJS.Timer | undefined;
-	webviewTempAlerts: boolean | undefined;
 	moveCursorTextDecoration: vscode.TextEditorDecorationType;
 	moveCursorTextDecorationTimer: NodeJS.Timer | undefined;
 	updateConfigurationTimer: NodeJS.Timer | undefined;
@@ -1219,7 +1218,17 @@ ${message}
 			if (this.extension.config.css.useMarkdownPreviewFontSettings) {
 				htmlStart = htmlStart.replace('<html', `<html style="${this.mdPreviewExtHtmlStyleAttr}"`);
 			}
-			const newHeadCharsetPreviewTags = `${match[0]}  ${this.baseTag}\n  ${this.contentSecurityTag}\n  ${this.codebraidPreviewJsTag}\n`;
+			const newHeadCharsetPreviewTags = [
+				match[0].trimEnd(),
+				this.baseTag,
+				this.contentSecurityTag,
+				this.codebraidPreviewJsTag,
+				// Timestamp ensures that preview updates when HTML is
+				// otherwise unmodified.  This may occur when changes are
+				// quickly undone.  The preview must still update to clear any
+				// DOM modifications such as temp alerts.
+				`<!-- Build time: ${this.lastBuildTime} -->\n`,
+			].join('\n  ');
 			const htmlEnd = html.slice(match.index + match[0].length);
 			const patchedHtml = [
 				htmlStart,
@@ -1590,10 +1599,6 @@ ${message}
 				if (this.usingContentSecurityNonce) {
 					this.resetContentSecurity();
 				}
-				if (this.webviewTempAlerts) {
-					this.panel.webview.postMessage({command: 'codebraidPreview.clearTempAlerts'});
-					this.webviewTempAlerts = false;
-				}
 				this.sourceOffset = scrollSyncData.offset;
 				this.sourceMap = scrollSyncData.map;
 				if (error) {
@@ -1608,7 +1613,6 @@ ${message}
 						if (this.isShowingUpdatingMessage) {
 							this.showPreviewEmpty();
 						}
-						this.webviewTempAlerts = true;
 						let message: string;
 						const errorLine = Number(messageMatch[2]);
 						const errorColumn = Number(messageMatch[4]);
@@ -1643,22 +1647,37 @@ ${message}
 						this.panel.webview.postMessage({
 							command: 'codebraidPreview.tempAlert',
 							tempAlert: `<pre data-codebraid-title="Parse error">${message}</pre>\n`,
+							alertType: 'parseError',
 						});
 					} else {
 						this.hasScrollSync = false;
 						this.showPreviewError(executable, error);
 					}
 				} else {
-					// `showPreviewHtml()` changes `isShowing*` status, so
-					// must be wrapped in conditionals rather than being
-					// refactored outside
-					if ((this.isShowingUpdatingMessage || this.isShowingErrorMessage) && this.visibleEditor) {
-						this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
-						this.showPreviewHtml(stdout);
+					// Order matters here because `showPreviewHtml()` changes
+					// `isShowing*` status
+					const switchingToPreview: boolean = this.isShowingUpdatingMessage || this.isShowingErrorMessage;
+					this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
+					this.showPreviewHtml(stdout);
+					if (stderr && this.extension.config.pandoc.showStderr !== 'never') {
+						// Strip out standard warning message for HTML without
+						// a title.  If this is relevant for the user's target
+						// output format, a warning will be raised during
+						// export.
+						stderr = stderr.replace(/(?:^|(?<=\n))\[WARNING\] This document format requires a nonempty <title> element\.\s*?\r?\n\s+?\S.*?\r?\n\s+?\S.*?(?:\r?\n|$)/, '');
+						if (this.extension.config.pandoc.showStderr === 'warning' && stderr.toLowerCase().indexOf('warning') === -1) {
+							stderr = '';
+						}
+						if (stderr) {
+							this.panel.webview.postMessage({
+								command: 'codebraidPreview.tempAlert',
+								tempAlert: `<pre data-codebraid-title="stderr">${this.convertStringToLiteralHtml(stderr)}</pre>\n`,
+								alertType: 'stderr'
+							});
+						}
+					}
+					if (switchingToPreview && this.visibleEditor) {
 						this.onDidChangePreviewEditor(this.visibleEditor);
-					} else {
-						this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
-						this.showPreviewHtml(stdout);
 					}
 				}
 				if (this.needsBuild) {

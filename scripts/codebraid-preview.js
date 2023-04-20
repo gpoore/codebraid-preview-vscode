@@ -31,6 +31,7 @@ let isScrollingPreviewWithEditorTimer = setTimeout(
 );
 
 
+let hasTempAlerts = false;
 window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.command) {
@@ -60,31 +61,53 @@ window.addEventListener('message', (event) => {
             return;
         }
         case 'codebraidPreview.tempAlert': {
-            let alertDiv = document.createElement('div');
+            const alertDiv = document.createElement('div');
             alertDiv.classList.add('codebraid-temp-alert');
             alertDiv.innerHTML = message.tempAlert;
-            document.body.appendChild(alertDiv);
-            const alertPosElems = alertDiv.getElementsByClassName('codebraid-temp-alert-pos');
-            for (const alertPosElem of alertPosElems) {
-                alertPosElem.addEventListener(
-                    'click',
-                    () => {
-                        const [lineNumber, lineColumn] = alertPosElem.getAttribute('data-codebraid-temp-alert-pos').split(':').map((s) => Number(s));
-                        vscode.postMessage({
-                            command: 'codebraidPreview.moveCursor',
-                            startLine: lineNumber, // Editor is zero-indexed, but that's handled on editor side.
-                            startColumn: lineColumn,
-                        });
-                    },
-                    false
-                );
+            switch (message.alertType) {
+                case 'parseError': {
+                    if (hasTempAlerts && !message.keepExisting) {
+                        for (const element of document.getElementsByClassName('codebraid-temp-alert')) {
+                            element.parentNode.removeChild(element);
+                        }
+                    }
+                    alertDiv.classList.add('codebraid-temp-alert-parseError');
+                    const alertPosElems = alertDiv.getElementsByClassName('codebraid-temp-alert-pos');
+                    for (const alertPosElem of alertPosElems) {
+                        alertPosElem.addEventListener(
+                            'click',
+                            () => {
+                                const [lineNumber, lineColumn] = alertPosElem.getAttribute('data-codebraid-temp-alert-pos').split(':').map((s) => Number(s));
+                                vscode.postMessage({
+                                    command: 'codebraidPreview.moveCursor',
+                                    startLine: lineNumber, // Editor is zero-indexed, but that's handled on editor side.
+                                    startColumn: lineColumn,
+                                });
+                            },
+                            false
+                        );
+                    }
+                    break;
+                }
+                case 'stderr': {
+                    alertDiv.classList.add('codebraid-temp-alert-stderr');
+                    const warningIconDiv = document.createElement('div');
+                    warningIconDiv.classList.add('codebraid-alert-icon');
+                    document.body.append(warningIconDiv);
+                    break;
+                }
             }
+            document.body.appendChild(alertDiv);
+            hasTempAlerts = true;
             return;
         }
         case 'codebraidPreview.clearTempAlerts': {
-            const elements = document.getElementsByClassName('codebraid-temp-alert');
-            for (const element of elements) {
-                element.parentNode.removeChild(element);
+            if (hasTempAlerts) {
+                for (const className of ['codebraid-temp-alert', 'codebraid-alert-icon']) {
+                    for (const element of document.getElementsByClassName(className)) {
+                        element.parentNode.removeChild(element);
+                    }
+                }
             }
             return;
         }

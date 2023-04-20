@@ -284,26 +284,33 @@ span.pandoc-raw::before {
 
 
 /* Short-term alert messages, such as syntax errors ------------------------*/
-div.codebraid-temp-alert {
+div:is(.codebraid-temp-alert, .codebraid-alert-icon) {
     position: fixed;
     z-index:100;
     bottom: 1em;
     right: 1em;
     border: 1px solid red;
+    max-width: calc(100% - 4em);
+    max-height: 50%;
 }
-.vscode-light div.codebraid-temp-alert {
+div.codebraid-temp-alert {
+    padding: 1em;
+}
+.vscode-light div:is(.codebraid-temp-alert, .codebraid-alert-icon) {
     background-color: rgba(220, 220, 220, 1);
     outline: 3px solid rgba(220, 220, 220, 0.4);
 }
-.vscode-dark div.codebraid-temp-alert {
+.vscode-dark div:is(.codebraid-temp-alert, .codebraid-alert-icon) {
     background-color: rgba(10, 10, 10, 1);
     outline: 3px solid rgba(10, 10, 10, 0.4);
 }
-.vscode-high-contrast div.codebraid-temp-alert {
+.vscode-high-contrast div:is(.codebraid-temp-alert, .codebraid-alert-icon) {
     background-color: var(--vscode-textCodeBlock-background);
     outline: 3px solid var(--vscode-textCodeBlock-background);
 }
 div.codebraid-temp-alert pre {
+    overflow: auto;
+    padding: 0;
     margin: 0;
 }
 div.codebraid-temp-alert pre::before {
@@ -315,4 +322,28 @@ div.codebraid-temp-alert pre::before {
     font-family: sans-serif;
     border-bottom: 1px solid red;
     margin-bottom: 1em;
+}
+div.codebraid-temp-alert-parseError {
+    visibility: visible;
+}
+div.codebraid-temp-alert-stderr {
+    visibility: hidden;
+}
+div.codebraid-alert-icon {
+    font-size: x-large;
+}
+div.codebraid-alert-icon::before {
+    position: relative;
+    color: red;
+    font-family: "codicon";
+    font-size: x-large;
+    font-weight: 500;
+    content: "\EA6C";
+    padding: 0.25em;
+}
+div.codebraid-alert-icon:hover + div.codebraid-temp-alert-stderr {
+    visibility: visible;
+}
+div.codebraid-temp-alert-stderr:hover {
+    visibility: visible;
 }
