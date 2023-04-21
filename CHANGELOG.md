@@ -1,7 +1,7 @@
 # Change Log
 
 
-# v0.15.0 (dev)
+# v0.15.0 (2023-04-20)
 
 * Added setting `codebraid.preview.pandoc.executable` (#17).  This allows
   customizing the location of the Pandoc executable, or using a wrapper
@@ -10,14 +10,14 @@
 * Added setting `codebraid.preview.pandoc.extraEnv` (#17).  This allows
   setting additional environment variables for the Pandoc subprocess.
 
+* Added setting `codebraid.preview.pandoc.showStderr` (#17).  This allows the
+  preview to display a notification when Pandoc completes without errors, but
+  stderr is non-empty.
+
 * Added setting
   `codebraid.preview.security.pandocDefaultDataDirIsResourceRoot` (#17).
   This allows the preview to load resources like images and CSS from
   the default Pandoc user data directory.
-
-* Added setting `codebraid.preview.pandoc.showStderr` (#17).  This allows the
-  preview to display a notification when Pandoc completes without errors, but
-  stderr is non-empty.
 
 * The preview now automatically converts local `file:` URIs that point to the
   default Pandoc user data directory into VS Code webview URIs
@@ -43,6 +43,8 @@
 
 * Added details in README under Security about the implications of the Pandoc
   options `--embed-resources` and `--extract-media`.
+
+* Updated KaTeX to v0.16.6.
 
 
 

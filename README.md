@@ -391,6 +391,8 @@ Some Pandoc options have limited preview support or require special settings.
 
 * `codebraid.preview.pandoc.executable` [`pandoc`]:  Pandoc executable.  This
   is used within a shell, so it must be appropriately quoted and escaped.
+  If this is a wrapper script for Pandoc, it must return Pandoc's version info
+  verbatim when called with `--version`.
 
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content (Pandoc Markdown `{=format}`) in the
