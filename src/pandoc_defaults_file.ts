@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023, Geoffrey M. Poore
+// Copyright (c) 2022-2024, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -48,7 +48,7 @@ export class PandocDefaultsFile implements vscode.Disposable {
 
 	private isDisposed: boolean;
 	private isUpdating: boolean;
-	private scheduledUpdateTimer: NodeJS.Timer | undefined;
+	private scheduledUpdateTimer: NodeJS.Timeout | undefined;
 
 	constructor(previewPanel: PreviewPanel) {
 		this.previewPanel = previewPanel;

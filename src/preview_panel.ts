@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023, Geoffrey M. Poore
+// Copyright (c) 2022-2024, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -144,15 +144,15 @@ export default class PreviewPanel implements vscode.Disposable {
 	codebraidPreviewJsTag: string;
 	hasScrollSync: boolean;
 	isScrollingEditorWithPreview: boolean;
-	isScrollingEditorWithPreviewTimer: NodeJS.Timer | undefined;
+	isScrollingEditorWithPreviewTimer: NodeJS.Timeout | undefined;
 	sourceOffset: number;
 	sourceMap: Map<string, [number, number]>;
 	isShowingUpdatingMessage: boolean;
 	isShowingErrorMessage: boolean;
-	updateTimer: NodeJS.Timer | undefined;
+	updateTimer: NodeJS.Timeout | undefined;
 	moveCursorTextDecoration: vscode.TextEditorDecorationType;
-	moveCursorTextDecorationTimer: NodeJS.Timer | undefined;
-	updateConfigurationTimer: NodeJS.Timer | undefined;
+	moveCursorTextDecorationTimer: NodeJS.Timeout | undefined;
+	updateConfigurationTimer: NodeJS.Timeout | undefined;
 
 	// Subprocess
 	// ----------

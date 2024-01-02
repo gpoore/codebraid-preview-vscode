@@ -1,4 +1,4 @@
-// Copyright (c) 2023, Geoffrey M. Poore
+// Copyright (c) 2023-2024, Geoffrey M. Poore
 // All rights reserved.
 //
 // Licensed under the BSD 3-Clause License:
@@ -229,7 +229,7 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
     private buildConfigCollections: Map<string, PandocBuildConfigCollection>;
     private fallbackBuildConfigCollections: Map<string, PandocBuildConfigCollection>;
     private isUpdating: boolean;
-    private scheduledUpdateTimer: NodeJS.Timer | undefined;
+    private scheduledUpdateTimer: NodeJS.Timeout | undefined;
     private isDisposed: boolean;
 
     constructor(context: vscode.ExtensionContext) {
