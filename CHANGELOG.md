@@ -1,7 +1,24 @@
 # Change Log
 
 
-# v0.15.0 (2023-04-20)
+## v0.16.0 (dev)
+
+* Improved preview compatibility with custom Pandoc HTML templates.
+  Eliminated dependence on the location and format of a `meta` tag with
+  `charset` attribute.  Improved error messages for HTML that does not have
+  expected format (#20).
+
+* The preview now sets the Pandoc template variable `codebraid_preview` to
+  `true`.  This makes it possible for custom HTML templates to adapt based on
+  whether they are being used in the preview.
+
+* Improved display of stderr.  When the preview HTML has an unsupported format
+  or is invalid, non-error stderr is no longer displayed.  When the input
+  format is `markdown_github`, a deprecation warning is only displayed a single time when the preview initially starts.
+
+
+
+## v0.15.0 (2023-04-20)
 
 * Added setting `codebraid.preview.pandoc.executable` (#17).  This allows
   customizing the location of the Pandoc executable, or using a wrapper
@@ -48,7 +65,7 @@
 
 
 
-# v0.14.0 (2023-04-08)
+## v0.14.0 (2023-04-08)
 
 * The preview is now compatible with Jupyter notebooks (`ipynb`) (#16).
   Scroll sync is not supported.  VS Code opens notebooks with
@@ -57,7 +74,7 @@
 
 
 
-# v0.13.0 (2023-03-25)
+## v0.13.0 (2023-03-25)
 
 * Pandoc 3.1.1 is now the minimum recommended version.  The Pandoc version is
   now checked when the extension loads, and there are warnings for older

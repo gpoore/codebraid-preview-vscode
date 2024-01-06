@@ -53,7 +53,21 @@ type ScrollSyncData = {
 
 type UpdatingStatus = null | 'waiting' | 'running' | 'finished';
 const yamlMetadataRegex = /^---[ \t]*\r?\n.+?\n(?:---|\.\.\.)[ \t]*\r?\n/us;
-
+const previewHtmlStartRegex = new RegExp([
+	/^\s*/.source,
+	/(?:<!--(?:[^-]|-(?!-))*-->\s*)*/.source,
+	/<!doctype html>\s*/.source,
+	/(?:<!--(?:[^-]|-(?!-))*-->\s*)*/.source,
+	/(?:<html(?:\s+[a-zA-Z][a-zA-Z0-9]*(?:[:-][a-zA-Z0-9]+)*\s*=\s*(?:"[^"]*"|'[^']*'))*\s*>\s*)/.source,
+	/(?:<!--(?:[^-]|-(?!-))*-->\s*)*/.source,
+	/<head>\s*/.source,
+	/(?:<!--(?:[^-]|-(?!-))*-->\s*)*/.source,
+	/(?:<meta charset\s*=\s*(?:"[a-zA-Z0-9_-]+"|'[a-zA-Z0-9_-]+')\s*\/?>[ \t\r]*\n?)?/.source,
+].join(''), 'i');
+const stderrDisplayedNeverRegex = /(?:^|(?<=\n))\[WARNING\] This document format requires a nonempty <title> element\.\s*?\r?\n\s+?\S.*?\r?\n\s+?\S.*?(?:\r?\n|$)/;
+const stderrDisplayedOnceRegexes: [RegExp] = [
+	/(?:^|(?<=\n))\[WARNING\] Deprecated: markdown_github. Use gfm instead.\r?\n/,
+];
 
 export default class PreviewPanel implements vscode.Disposable {
 	// `PreviewPanel` interacts extensively with `vscode.TextEditor` and
@@ -128,6 +142,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	lastExportWriterName: string | undefined;
 	cacheKey: string;
 	isNotebook: boolean;
+	stderrDisplayedOnce: Set<string>;
 
 	// Display
 	// -------
@@ -197,6 +212,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		hash.update(editor.document.fileName);
 		this.cacheKey = hash.digest('base64url');
 		this.isNotebook = 'isNotebook' in editor;
+		this.stderrDisplayedOnce = new Set();
 
 		// Wait to create defaults until the attributes needed are set
 		this.documentPandocDefaultsFile = new PandocDefaultsFile(this);
@@ -298,6 +314,7 @@ export default class PreviewPanel implements vscode.Disposable {
 			`--standalone`,
 			`--lua-filter="${this.pandocResourcePaths.sourceposSyncFilter}"`,
 			`--katex=${this.webviewResourceUris.katex}/`,
+			`--variable`, `codebraid_preview`,
 		];
 		this.pandocPreviewArgsEmbed = [
 			...this.pandocPreviewArgs.filter(elem => !elem.startsWith('--katex')),
@@ -1212,14 +1229,14 @@ ${message}
 		}
 		this.isShowingUpdatingMessage = false;
 		this.isShowingErrorMessage = false;
-		let match = /<head>[ \t\r\n]*<meta charset="[a-zA-Z0-9_-]+" +\/>[ \t\r]*\n/.exec(html);
-		if (html.indexOf(`<head>`) === match?.index) {
-			let htmlStart = html.slice(0, match.index);
+		const match = previewHtmlStartRegex.exec(html);
+		if (match) {
+			let htmlStart = match[0].trimEnd();
 			if (this.extension.config.css.useMarkdownPreviewFontSettings) {
 				htmlStart = htmlStart.replace('<html', `<html style="${this.mdPreviewExtHtmlStyleAttr}"`);
 			}
-			const newHeadCharsetPreviewTags = [
-				match[0].trimEnd(),
+			const htmlEnd = html.slice(match[0].length);
+			const newContent = [
 				this.baseTag,
 				this.contentSecurityTag,
 				this.codebraidPreviewJsTag,
@@ -1229,10 +1246,9 @@ ${message}
 				// DOM modifications such as temp alerts.
 				`<!-- Build time: ${this.lastBuildTime} -->\n`,
 			].join('\n  ');
-			const htmlEnd = html.slice(match.index + match[0].length);
 			const patchedHtml = [
 				htmlStart,
-				newHeadCharsetPreviewTags,
+				newContent,
 				htmlEnd,
 			].join('');
 			this.panel.webview.html = patchedHtml;
@@ -1240,14 +1256,38 @@ ${message}
 			this.isShowingErrorMessage = true;
 			this.panel.webview.html = this.formatMessage(
 				'Codebraid Preview',
-				[
-					'<h1 style="color:red;">Codebraid Preview Error</h1>',
-					'<h2>Pandoc returned unexpected, potentially invalid HTML:</h2>',
-					'<pre style="white-space: pre-wrap;">',
-					this.convertStringToLiteralHtml(html),
-					'</pre>',
-					''
-				].join('\n')
+				`<h1 style="color:red;">Codebraid Preview Error</h1>
+<h2>Preview HTML has an unsupported format or is invalid</h2>
+<p>HTML should have the following format (case insensitive):</p>
+<pre style="font-weight: bold; font-size: 1.25em;">
+<span style="color:gray;">&lt;!-- ... --&gt;</span>       <span style="color:gray;">{optional comment(s)}</span>
+&lt;!doctype html&gt;    <span style="color:red;">{required}</span>
+<span style="color:gray;">&lt;!-- ... --&gt;</span>       <span style="color:gray;">{optional comment(s)}</span>
+&lt;html {attrs}&gt;     <span style="color:red;">{required; optional attributes}</span>
+<span style="color:gray;">&lt;!-- ... --&gt;</span>       <span style="color:gray;">{optional comment(s)}</span>
+&lt;head&gt;             <span style="color:red;">{required}</span>
+...
+</pre>
+<p>
+Currently, any optional attributes in the <code>html</code> tag must have names matching the regex
+<code>[a-zA-Z][a-zA-Z0-9]*(?:[:-][a-zA-Z0-9]+)*</code> with quoted values. This format is compatible with the default
+Pandoc HTML template. The Pandoc template can be viewed by running <code>pandoc --print-default-template=html</code>.
+When necessary, custom templates can adapt to Codebraid Preview by checking the <code>codebraid_preview</code>
+template variable:
+</p>
+<pre>
+$if(codebraid_preview)$
+...
+$else$
+...
+$endif$
+</pre>
+<hr/>
+<h2>Received preview HTML</h2>
+<pre style="white-space: pre-wrap;">
+${this.convertStringToLiteralHtml(html)}
+</pre>
+`
 			);
 		}
 	}
@@ -1659,12 +1699,24 @@ ${message}
 					const switchingToPreview: boolean = this.isShowingUpdatingMessage || this.isShowingErrorMessage;
 					this.hasScrollSync = this.pandocPreviewOptions?.reader?.canSourcepos || false;
 					this.showPreviewHtml(stdout);
-					if (stderr && this.extension.config.pandoc.showStderr !== 'never') {
+					// If child process output doesn't have expected format,
+					// then can be showing error message at this point
+					if (!this.isShowingErrorMessage && stderr && this.extension.config.pandoc.showStderr !== 'never') {
 						// Strip out standard warning message for HTML without
 						// a title.  If this is relevant for the user's target
 						// output format, a warning will be raised during
 						// export.
-						stderr = stderr.replace(/(?:^|(?<=\n))\[WARNING\] This document format requires a nonempty <title> element\.\s*?\r?\n\s+?\S.*?\r?\n\s+?\S.*?(?:\r?\n|$)/, '');
+						stderr = stderr.replace(stderrDisplayedNeverRegex, '');
+						for (const regex of stderrDisplayedOnceRegexes) {
+							const match = regex.exec(stderr);
+							if (match) {
+							    if (this.stderrDisplayedOnce.has(match[0])) {
+									stderr = stderr.replaceAll(regex, '');
+								} else {
+									this.stderrDisplayedOnce.add(match[0]);
+								}
+							}
+						}
 						const isWarning: boolean = stderr.toLowerCase().indexOf('warning') !== -1;
 						if (this.extension.config.pandoc.showStderr === 'warning' && !isWarning) {
 							stderr = '';

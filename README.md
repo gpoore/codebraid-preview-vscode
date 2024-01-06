@@ -267,6 +267,45 @@ only remove them if empty.  For example, in a Lua filter these nodes can be
 detected by checking `node.attributes['data-pos'] ~= nil`.
 
 
+## Custom Pandoc HTML templates
+
+The preview is compatible with custom Pandoc HTML templates.  Custom templates
+should typically be based on the default Pandoc template.  The default Pandoc
+template can be viewed by running `pandoc --print-default-template=html`.
+
+Custom templates must have this general format (case insensitive):
+```
+<!-- ... -->       {optional comment(s)}
+<!doctype html>    {required}
+<!-- ... -->       {optional comment(s)}
+<html {attrs}>     {required; optional attributes}
+<!-- ... -->       {optional comment(s)}
+<head>             {required}
+...
+```
+Currently, any optional attributes in the `html` tag must have names matching
+the regex `[a-zA-Z][a-zA-Z0-9]*(?:[:-][a-zA-Z0-9]+)*` with quoted values.
+
+Custom templates must also include CSS for the preview to display properly.
+This can be done following the default Pandoc template:
+```
+$for(css)$
+  <link rel="stylesheet" href="$css$" />
+$endfor$
+```
+
+The preview sets the Pandoc template variable `codebraid_preview` to `true`.
+When necessary, custom templates can use this to adapt to Codebraid Preview.
+For example:
+```
+$if(codebraid_preview)$
+...
+$else$
+...
+$endif$
+```
+
+
 ## Known limitations
 
 Some Pandoc options have limited preview support or require special settings.
