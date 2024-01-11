@@ -330,6 +330,15 @@ Some Pandoc options have limited preview support or require special settings.
 * `codebraid.preview.css.useDefault` [`true`]:  Whether the preview's default
   CSS is used.
 
+* `codebraid.preview.css.useMarkdownPreviewFontSettings` [`true`]:  Inherit
+  font settings (font family, font size, line height) from the built-in
+  Markdown preview (settings under `markdown.preview`), to maintain a
+  similar appearance.
+
+* `codebraid.preview.css.useMarkdownPreviewStyles` [`true`]:  Inherit custom
+  styles (CSS) from the built-in Markdown preview (`markdown.styles`), to
+  maintain a similar appearance.
+
 * `codebraid.preview.minBuildInterval` [`1000`]:  Minimum interval between
   document builds in milliseconds.  Builds only occur when there are changes.
 

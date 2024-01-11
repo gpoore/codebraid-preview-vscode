@@ -12,6 +12,10 @@
   `true`.  This makes it possible for custom HTML templates to adapt based on
   whether they are being used in the preview.
 
+* Added setting `codebraid.preview.css.useMarkdownPreviewStyles`.  This causes
+  the preview to inherit custom styles (CSS) from the built-in Markdown
+  preview (`markdown.styles`), to maintain a similar appearance (#19).
+
 * Improved display of stderr.  When the preview HTML has an unsupported format
   or is invalid, non-error stderr is no longer displayed.  When the input
   format is `markdown_github`, a deprecation warning is only displayed a single time when the preview initially starts.

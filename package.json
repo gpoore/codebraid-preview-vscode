@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.16.0-dev2",
+  "version": "0.16.0-dev3",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -69,6 +69,11 @@
           "type": "boolean",
           "default": true,
           "description": "Inherit font settings (font family, font size, line height) from the built-in Markdown preview (settings under \"markdown.preview\"), to maintain a similar appearance."
+        },
+        "codebraid.preview.css.useMarkdownPreviewStyles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inherit custom styles (CSS) from the built-in Markdown preview (\"markdown.styles\"), to maintain a similar appearance."
         },
         "codebraid.preview.css.useDefault": {
           "type": "boolean",

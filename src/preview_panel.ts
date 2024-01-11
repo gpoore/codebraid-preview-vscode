@@ -155,7 +155,9 @@ export default class PreviewPanel implements vscode.Disposable {
 	contentSecurityNonce: string;
 	usingContentSecurityNonce: boolean;
 	contentSecurityTag: string;
-	mdPreviewExtHtmlStyleAttr: string;
+	mdPreviewExtFontAttr: string;
+	mdPreviewExtStyleUris: Array<vscode.Uri | url.URL>;
+	mdPreviewExtStyleUrisEmbed: Array<vscode.Uri | url.URL>;
 	codebraidPreviewJsTag: string;
 	hasScrollSync: boolean;
 	isScrollingEditorWithPreview: boolean;
@@ -298,7 +300,8 @@ export default class PreviewPanel implements vscode.Disposable {
 		this.contentSecurityNonce = this.getContentSecurityNonce();
 		this.usingContentSecurityNonce = false;
 		this.contentSecurityTag = this.getContentSecurityTag();
-		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
+		this.mdPreviewExtFontAttr = this.getmdPreviewExtFontAttr();
+		[this.mdPreviewExtStyleUris, this.mdPreviewExtStyleUrisEmbed] = this.getMdPreviewExtStylesUrisWithEmbed();
 		this.codebraidPreviewJsTag = `<script type="module" src="${this.webviewResourceUris.codebraidPreviewJs}"></script>`;
 		this.hasScrollSync = false;
 		this.isScrollingEditorWithPreview = false;
@@ -465,7 +468,8 @@ export default class PreviewPanel implements vscode.Disposable {
 			return;
 		}
 		this.resetContentSecurity();
-		this.mdPreviewExtHtmlStyleAttr = this.getMdPreviewExtHtmlStyleAttr();
+		this.mdPreviewExtFontAttr = this.getmdPreviewExtFontAttr();
+		[this.mdPreviewExtStyleUris, this.mdPreviewExtStyleUrisEmbed] = this.getMdPreviewExtStylesUrisWithEmbed();
 
 		this.pandocInfo = undefined;
 		this.lastPandocPreviewOptions = this.pandocPreviewOptions;
@@ -696,7 +700,7 @@ export default class PreviewPanel implements vscode.Disposable {
 		quickPick.show();
 	}
 
-	getMdPreviewExtHtmlStyleAttr() : string {
+	getmdPreviewExtFontAttr() : string {
 		// Create a style attribute for use in the preview <html> tag to set
 		// font-related properties.  This allows font settings to be
 		// inherited from the built-in Markdown preview.  Reference:
@@ -708,6 +712,35 @@ export default class PreviewPanel implements vscode.Disposable {
 			isNaN(mdPreviewExtConfig.lineHeight) ? '' : `--markdown-line-height: ${mdPreviewExtConfig.lineHeight};`,
 		].join(' ').replace(/"/g, '&quot;');
 		return styleAttr;
+	}
+
+	getMdPreviewExtStylesUrisWithEmbed() : [Array<vscode.Uri | url.URL>, Array<vscode.Uri | url.URL>] {
+		const styles: Array<vscode.Uri | url.URL> = [];
+		const stylesEmbed: Array<vscode.Uri | url.URL> = [];
+		if (!this.panel) {
+			return [styles, stylesEmbed];
+		}
+		const mdPreviewExtConfig = vscode.workspace.getConfiguration('markdown');
+		const relativeRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(this.fileNames[0]))?.uri.fsPath || this.cwd;
+		for (const mdPreviewExtStyle of mdPreviewExtConfig.styles) {
+			let style: vscode.Uri | url.URL;
+			let styleEmbed: vscode.Uri | url.URL;
+			try {
+				style = vscode.Uri.parse(mdPreviewExtStyle, true);
+				styleEmbed = style;
+			} catch {
+				if (path.isAbsolute(mdPreviewExtStyle)) {
+					style = this.panel.webview.asWebviewUri(vscode.Uri.file(mdPreviewExtStyle));
+					styleEmbed = url.pathToFileURL(mdPreviewExtStyle);
+				} else {
+					style = this.panel.webview.asWebviewUri(vscode.Uri.file(path.join(relativeRoot, mdPreviewExtStyle)));
+					styleEmbed = url.pathToFileURL(path.join(relativeRoot, mdPreviewExtStyle));
+				}
+			}
+			styles.push(style);
+			stylesEmbed.push(styleEmbed);
+		}
+		return [styles, stylesEmbed];
 	}
 
 	getContentSecurityNonce() : string {
@@ -833,7 +866,7 @@ export default class PreviewPanel implements vscode.Disposable {
 	formatMessage(title: string, message: string) {
 		let htmlStyle: string;
 		if (this.extension.config.css.useMarkdownPreviewFontSettings) {
-			htmlStyle = `style="${this.mdPreviewExtHtmlStyleAttr}"`;
+			htmlStyle = `style="${this.mdPreviewExtFontAttr}"`;
 		} else {
 			htmlStyle = '';
 		}
@@ -1233,7 +1266,7 @@ ${message}
 		if (match) {
 			let htmlStart = match[0].trimEnd();
 			if (this.extension.config.css.useMarkdownPreviewFontSettings) {
-				htmlStart = htmlStart.replace('<html', `<html style="${this.mdPreviewExtHtmlStyleAttr}"`);
+				htmlStart = htmlStart.replace('<html', `<html style="${this.mdPreviewExtFontAttr}"`);
 			}
 			const htmlEnd = html.slice(match[0].length);
 			const newContent = [
@@ -1567,6 +1600,19 @@ ${this.convertStringToLiteralHtml(html)}
 				args.push(...this.pandocCssArgsEmbed);
 			} else {
 				args.push(...this.pandocCssArgs);
+			}
+		}
+		// This follows the built-in Markdown preview, so the
+		// `css.overrideDefault` setting doesn't apply
+		if (this.extension.config.css.useMarkdownPreviewStyles) {
+			let uris: Array<vscode.Uri | url.URL>;
+			if (this.pandocPreviewOptions.embedResources) {
+				uris = this.mdPreviewExtStyleUrisEmbed;
+			} else {
+				uris = this.mdPreviewExtStyleUris;
+			}
+			for (const uri of uris) {
+				args.push(`--css=${uri}`);
 			}
 		}
 		if (this.pandocPreviewBuildConfig?.defaultsFileName) {
