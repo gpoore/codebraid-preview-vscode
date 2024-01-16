@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.16.0 (dev)
+## v0.16.0 (2024-01-16)
 
 * Improved preview compatibility with custom Pandoc HTML templates.
   Eliminated dependence on the location and format of a `meta` tag with
@@ -27,6 +27,8 @@
   or is invalid, non-error stderr is no longer displayed.  When the input
   format is `markdown_github`, a deprecation warning is only displayed a
   single time when the preview initially starts.
+
+* Updated KaTeX to v0.16.9.
 
 
 
