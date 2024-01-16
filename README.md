@@ -266,6 +266,15 @@ scroll sync capabilities, make sure that your filters skip these nodes and
 only remove them if empty.  For example, in a Lua filter these nodes can be
 detected by checking `node.attributes['data-pos'] ~= nil`.
 
+Block-level filters typically must be modified to be compatible with Pandoc's
+`sourcepos` because it inserts many `Div` nodes with a `data-pos` attribute
+into the AST.  Block-level filters typically do not require modification for
+Codebraid Preview's `sourcepos` because it only inserts `Div` nodes into the
+AST to wrap `CodeBlock` and `RawBlock` nodes.  Pandoc's `sourcepos` is used by
+default when available (CommonMark-based formats `commonmark`, `commonmark_x`,
+and `gfm`).  To use Codebraid Preview's `sourcepos` instead, change the
+setting `codebraid.preview.pandoc.preferPandocSourcepos` to `false`.
+
 
 ## Custom Pandoc HTML templates
 
@@ -441,6 +450,17 @@ Some Pandoc options have limited preview support or require special settings.
   is used within a shell, so it must be appropriately quoted and escaped.
   If this is a wrapper script for Pandoc, it must return Pandoc's version info
   verbatim when called with `--version`.
+
+* `codebraid.preview.pandoc.preferPandocSourcepos` [`true`]:  Use Pandoc's
+  `sourcepos` extension when available, instead of using Codebraid Preview's
+  emulation of `sourcepos`.  Sourcepos data maps input file(s) to preview HTML
+  and makes possible scroll sync.  Pandoc's `sourcepos` usually gives more
+  accurate scroll sync, but also typically requires block-level filters to
+  skip sourcepos elements with a `data-pos` attribute in the Pandoc AST.
+  Pandoc's `sourcepos` is only available for CommonMark-based formats
+  (`commonmark`, `commonmark_x`, and `gfm`).  Codebraid Preview's emulation of
+  `sourcepos` usually gives less accurate scroll sync, but also typically
+  requires no modifications for block-level filters.
 
 * `codebraid.preview.pandoc.showRaw` [`true`]:  Display a verbatim
   representation of non-HTML raw content (Pandoc Markdown `{=format}`) in the

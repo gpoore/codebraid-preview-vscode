@@ -2,7 +2,7 @@
   "name": "codebraid-preview",
   "displayName": "Codebraid Preview",
   "description": "Preview Markdown documents with Pandoc.  Optionally execute code blocks and inline code with Codebraid, using Jupyter kernels or its built-in code execution system.",
-  "version": "0.16.0-dev3",
+  "version": "0.16.0-dev4",
   "publisher": "gpoore",
   "homepage": "https://github.com/gpoore/codebraid-preview-vscode",
   "license": "See license in LICENSE.txt (BSD 3-Clause except as noted otherwise)",
@@ -265,6 +265,11 @@
           "description": "Special Pandoc defaults file in document directory.  If it exists and defines \"input-files\", the preview will automatically work with all files in a multi-file document.",
           "deprecationMessage": "Deprecated:  Use codebraid.preview.pandoc.defaultsFile instead.",
           "markdownDeprecationMessage": "**Deprecated**:  Use `codebraid.preview.pandoc.defaultsFile` instead."
+        },
+        "codebraid.preview.pandoc.preferPandocSourcepos": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use Pandoc's \"sourcepos\" extension when available, instead of using Codebraid Preview's emulation of \"sourcepos\".  Sourcepos data maps input file(s) to preview HTML and makes possible scroll sync.  Pandoc's \"sourcepos\" usually gives more accurate scroll sync, but also typically requires block-level filters to skip sourcepos elements with a \"data-pos\" attribute in the Pandoc AST.  Pandoc's \"sourcepos\" is only available for CommonMark-based formats (commonmark, commonmark_x, and gfm).  Codebraid Preview's emulation of \"sourcepos\" usually gives less accurate scroll sync, but also typically requires no modifications for block-level filters."
         },
         "codebraid.preview.pandoc.showRaw": {
           "type": "boolean",

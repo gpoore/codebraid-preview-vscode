@@ -158,13 +158,13 @@ export class PandocBuildConfigCollection {
     preview: Map<string, PandocPreviewBuildConfig>;
     export: Map<string, PandocExportBuildConfig>;
 
-    constructor(inputFileExtension: string, settings: any, context: vscode.ExtensionContext) {
+    constructor(inputFileExtension: string, settings: any, context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration) {
         this.inputFileExtension = inputFileExtension;
         let maybeReader = settings.reader;
         if (typeof(maybeReader) !== 'string') {
             throw new CodebraidPreviewError('Missing or invalid value for "reader"');
         }
-        this.reader = new PandocReader(maybeReader, context);
+        this.reader = new PandocReader(maybeReader, context, config);
         let maybePreview = settings.preview;
         if (typeof(maybePreview) !== 'object' || maybePreview === null || Array.isArray(maybePreview)) {
             throw new CodebraidPreviewError('Missing or invalid value for "preview"');
@@ -232,13 +232,13 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
     private scheduledUpdateTimer: NodeJS.Timeout | undefined;
     private isDisposed: boolean;
 
-    constructor(context: vscode.ExtensionContext) {
+    constructor(context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration) {
         this.context = context;
         this.buildConfigCollections = new Map();
         this.fallbackBuildConfigCollections = new Map();
         for (const [ext, reader] of fallbackFileExtensionToReaderMap) {
             const fallbackConfigSettings = this.getFallbackConfigSettings(reader);
-            const configCollection = new PandocBuildConfigCollection(ext, fallbackConfigSettings, context);
+            const configCollection = new PandocBuildConfigCollection(ext, fallbackConfigSettings, context, config);
             this.fallbackBuildConfigCollections.set(ext, configCollection);
         }
 
@@ -291,7 +291,7 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
             oldKeys.delete(inputFileExtension);
             let buildConfigCollection: PandocBuildConfigCollection;
             try {
-                buildConfigCollection = new PandocBuildConfigCollection(inputFileExtension, value, this.context);
+                buildConfigCollection = new PandocBuildConfigCollection(inputFileExtension, value, this.context, config);
             } catch (error) {
                 if (error instanceof CodebraidPreviewError) {
                     errorMessages.push(`Failed to process settings for ${key}:  ${error.message}.`);
@@ -336,7 +336,7 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
                 // being incompatible with `config.pandoc.fromFormat`
                 try {
                     const fallbackConfigSettings = this.getFallbackConfigSettings(config.pandoc.fromFormat);
-                    mdBuildConfigCollection = new PandocBuildConfigCollection('.md', fallbackConfigSettings, this.context);
+                    mdBuildConfigCollection = new PandocBuildConfigCollection('.md', fallbackConfigSettings, this.context, config);
                     this.buildConfigCollections.set('.md', mdBuildConfigCollection);
                 } catch (error) {
                     vscode.window.showErrorMessage(
@@ -348,7 +348,7 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
                 // Already resulted in error message due to failed fallback
             } else if (mdBuildConfigCollection.reader.asPandocString === 'commonmark_x') {
                 try {
-                    const replacementReader = new PandocReader(config.pandoc.fromFormat, this.context);
+                    const replacementReader = new PandocReader(config.pandoc.fromFormat, this.context, config);
                     mdBuildConfigCollection.reader = replacementReader;
                     for (const buildConfig of mdBuildConfigCollection.preview.values()) {
                         buildConfig.reader = replacementReader;
@@ -371,7 +371,7 @@ export class PandocBuildConfigCollections implements vscode.Disposable {
             let mdBuildConfigCollection = this.buildConfigCollections.get('.md');
             if (!mdBuildConfigCollection) {
                 const fallbackConfigSettings = this.getFallbackConfigSettings('commonmark_x');
-                mdBuildConfigCollection = new PandocBuildConfigCollection('.md', fallbackConfigSettings, this.context);
+                mdBuildConfigCollection = new PandocBuildConfigCollection('.md', fallbackConfigSettings, this.context, config);
                 this.buildConfigCollections.set('.md', mdBuildConfigCollection);
             }
             let useOptions: boolean = true;

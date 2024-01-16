@@ -95,7 +95,7 @@ export async function activate(extensionContext: vscode.ExtensionContext) {
 		11
 	);
 
-	const pandocBuildConfigCollections = new PandocBuildConfigCollections(context);
+	const pandocBuildConfigCollections = new PandocBuildConfigCollections(context, config);
 	context.subscriptions.push(pandocBuildConfigCollections);
 	await pandocBuildConfigCollections.update(config);
 	const resourceRootUris = resourceRoots.map((root) => vscode.Uri.file(context.asAbsolutePath(root)));

@@ -16,9 +16,17 @@
   the preview to inherit custom styles (CSS) from the built-in Markdown
   preview (`markdown.styles`), to maintain a similar appearance (#19).
 
+* Added setting `codebraid.preview.pandoc.preferPandocSourcepos`.  This
+  determines whether Pandoc's `sourcepos` is used (when available) to provide
+  scroll sync instead of Codebraid Preview's `sourcepos`.  Pandoc's
+  `sourcepos` is used by default (when available) because it is usually more
+  accurate.  Codebraid Preview's `sourcepos` can be convenient when working
+  with filters, since it makes fewer modifications to the AST.
+
 * Improved display of stderr.  When the preview HTML has an unsupported format
   or is invalid, non-error stderr is no longer displayed.  When the input
-  format is `markdown_github`, a deprecation warning is only displayed a single time when the preview initially starts.
+  format is `markdown_github`, a deprecation warning is only displayed a
+  single time when the preview initially starts.
 
 
 

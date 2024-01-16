@@ -84,7 +84,7 @@ export class PandocReader extends PandocIOProcessor {
     asCodebraidArg: string;
     hasWrapper: boolean;
 
-    constructor(format: string, context: vscode.ExtensionContext) {
+    constructor(format: string, context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration) {
         super(format);
 
         this.hasExtensionsSourcepos = this.extensions.indexOf('+sourcepos') > this.extensions.indexOf('-sourcepos');
@@ -96,10 +96,27 @@ export class PandocReader extends PandocIOProcessor {
         this.canCodebraid = this.builtinBase !== undefined && readersWithCodebraid.has(this.builtinBase);
         this.hasWrapper = this.builtinBase !== undefined && readersWithWrapper.has(this.builtinBase);
 
+        if (this.hasExtensionsSourcepos) {
+            if (!this.isCommonmark) {
+                throw new CodebraidPreviewError(
+                    `Pandoc reader "${this.base}" is not based on CommonMark and does not support the "sourcepos" extension`
+                );
+            } else if (!config.pandoc.preferPandocSourcepos) {
+                throw new CodebraidPreviewError(
+                    `Pandoc reader "${this.base}" uses the "sourcepos" extension, but setting "codebraid.preview.pandoc.preferPandocSourcepos" is "false"`
+                );
+            }
+        }
+
         if (this.hasWrapper) {
             let readerWithWrapperAndExtensions = `${this.builtinBase}.lua${this.extensions}`;
-            if (this.canSourcepos && !this.hasExtensionsSourcepos) {
-                readerWithWrapperAndExtensions += '+sourcepos';
+            if (this.canSourcepos) {
+                if (!this.hasExtensionsSourcepos) {
+                    readerWithWrapperAndExtensions += '+sourcepos';
+                }
+                if (!config.pandoc.preferPandocSourcepos) {
+                    readerWithWrapperAndExtensions += '-prefer_pandoc_sourcepos';
+                }
             }
             const asArg = context.asAbsolutePath(`${pandocReaderWrapperPath}/${readerWithWrapperAndExtensions}`);
             // Built-in readers will be unquoted

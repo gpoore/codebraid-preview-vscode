@@ -102,13 +102,13 @@
 --
 
 
-local VERSION = {0, 1, 0}
-local VERSION_DATE = '20230324'
+local VERSION = {0, 2, 0}
+local VERSION_DATE = '20240116'
 local VERSION_STRING = table.concat(VERSION, '.')
 local AUTHOR_NOTE = table.concat({
     'Pandoc Lua reader library for [Codebraid](https://codebraid.org/) and related software.',
     'Version ' .. VERSION_STRING .. ' from ' .. VERSION_DATE .. '.',
-    'Copyright (c) 2023, Geoffrey M. Poore.',
+    'Copyright (c) 2023-2024, Geoffrey M. Poore.',
     'All rights reserved.',
     'Licensed under the BSD 3-Clause License: http://opensource.org/licenses/BSD-3-Clause.',
 }, '\n')
@@ -121,11 +121,17 @@ local readerlib = {
 
 -- There is no way for a custom reader to access command-line `--file-scope`
 -- status, so a corresponding extension is defined.  The `sourcepos` extension
--- defined here is only actually created for Pandoc formats that do not
--- already have `sourcepos` support.
+-- defined here is primarily for Pandoc formats that do not already have
+-- `sourcepos` support.  The `prefer_pandoc_sourcepos` extension determines
+-- whether the `sourcepos` extension uses Pandoc's `sourcepos` (when
+-- available) or uses `sourceposlib` instead.  The `sourceposlib`
+-- implementation is usually less accurate, but also inserts fewer block-level
+-- nodes into the AST and thus can be more convenient for working with
+-- filters.
 readerlib.customExtensions = {
     file_scope = false,
     sourcepos = false,
+    prefer_pandoc_sourcepos = true,
 }
 
 
@@ -267,7 +273,11 @@ local function parseExtensions(format, extensions)
         if readerlib.customExtensions[ext] == nil then
             pandocExtensions[ext] = true
         elseif ext == 'sourcepos' and readerlib.formatHasPandocSourcepos(format) then
-            pandocExtensions[ext] = true
+            if extensions:includes('prefer_pandoc_sourcepos') then
+                pandocExtensions[ext] = true
+            else
+                customExtensions[ext] = true
+            end
         else
             customExtensions[ext] = true
         end

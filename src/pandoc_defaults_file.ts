@@ -333,11 +333,11 @@ export class PandocDefaultsFile implements vscode.Disposable {
 		let embeddedReader: PandocReader | null | undefined;
 		if (hasReader) {
 			if (pandocBuiltinReaderWriterRegex.test(maybeReader)) {
-				extractedReader = new PandocReader(maybeReader, this.extension.context);
+				extractedReader = new PandocReader(maybeReader, this.extension.context, this.extension.config);
 			} else {
 				// Custom definitions may not fit expected patterns
 				try {
-					embeddedReader = new PandocReader(maybeReader, this.extension.context);
+					embeddedReader = new PandocReader(maybeReader, this.extension.context, this.extension.config);
 				} catch {
 					embeddedReader = null;
 				}
