@@ -244,6 +244,7 @@ export default class PreviewPanel implements vscode.Disposable {
 				enableScripts: true,
 				retainContextWhenHidden: true,
 				localResourceRoots: localResourceRootUris,
+				enableFindWidget: true,
 			}
 		);
 		// Cleanup may be triggered by the webview panel being closed.  Since

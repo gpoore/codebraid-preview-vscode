@@ -5,6 +5,9 @@
 
 * Added refresh button to preview (#24).
 
+* Enabled the find widget in the preview webview.  This allows searching
+  within the preview using `CTRL+F`.
+
 
 
 ## v0.16.0 (2024-01-16)
