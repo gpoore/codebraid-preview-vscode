@@ -1,6 +1,12 @@
 # Change Log
 
 
+## v0.17.0 (dev)
+
+* Added refresh button to preview (#24).
+
+
+
 ## v0.16.0 (2024-01-16)
 
 * Improved preview compatibility with custom Pandoc HTML templates.

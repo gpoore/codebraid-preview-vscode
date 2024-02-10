@@ -350,3 +350,30 @@ div.codebraid-alert-icon:hover + div.codebraid-temp-alert-stderr {
 div.codebraid-temp-alert-stderr:hover {
     visibility: visible;
 }
+
+
+
+
+/* toolbar */
+div.codebraid-toolbar {
+    cursor: pointer;
+    position: fixed;
+    z-index:100;
+    top: 0;
+    right: 0;
+    background-color: var(--vscode-editorWidget-background);
+    font-family: "codicon";
+    font-size: large;
+    font-weight: 500;
+    border-left: 1px solid var(--vscode-editorWidget-border);
+    border-bottom: 1px solid var(--vscode-editorWidget-border);
+    border-radius: 0px 0px 4px 4px;
+    box-shadow: 0 0 3px 1px var(--vscode-widget-shadow);
+}
+div.codebraid-toolbar-button {
+    color: var(--vscode-editorWidget-foreground);
+    text-align: center;
+    line-height: 1.2em;
+    width: 1.2em;
+    height: 1.2em;
+}

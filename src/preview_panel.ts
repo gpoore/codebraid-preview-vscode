@@ -1097,6 +1097,10 @@ ${message}
 			return;
 		}
 		switch (message.command) {
+			case 'codebraidPreview.refresh': {
+				this.update();
+				return;
+			}
 			case 'codebraidPreview.scrollEditor': {
 				if (!this.visibleEditor || !this.hasScrollSync) {
 					return;

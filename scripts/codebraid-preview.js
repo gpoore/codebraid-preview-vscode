@@ -362,3 +362,19 @@ ondblclick = function(event) {
         }
     );
 };
+
+
+const toolbarDiv = document.createElement('div');
+document.body.append(toolbarDiv);
+toolbarDiv.classList.add('codebraid-toolbar');
+const toolbarRefreshDiv = document.createElement('div');
+toolbarDiv.appendChild(toolbarRefreshDiv);
+toolbarRefreshDiv.classList.add('codebraid-toolbar-button');
+toolbarRefreshDiv.innerHTML = '&#xeb37';
+toolbarRefreshDiv.addEventListener(
+    'click',
+    () => {
+        vscode.postMessage({command: 'codebraidPreview.refresh'});
+    },
+    false
+);
