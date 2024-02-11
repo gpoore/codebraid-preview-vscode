@@ -1,7 +1,7 @@
 # Change Log
 
 
-## v0.17.0 (dev)
+## v0.17.0 (2024-02-10)
 
 * Added refresh button to preview (#24).
 
