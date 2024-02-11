@@ -8,6 +8,11 @@
 * Enabled the find widget in the preview webview.  This allows searching
   within the preview using `CTRL+F`.
 
+* Improved the appearance of code in the preview.  Code block text and the
+  overall code block regions now have the exact same, correct background
+  color.  Fixed CSS interaction that caused the first line in a code block to
+  be indented by a very small amount.  Improved display of line numbers.
+
 * Updated Markdown CSS from VS Code's built-in Markdown preview.  This keeps
   the appearance in sync with recent updates to the built-in Markdown preview.
 
