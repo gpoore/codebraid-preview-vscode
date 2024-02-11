@@ -8,6 +8,9 @@
 * Enabled the find widget in the preview webview.  This allows searching
   within the preview using `CTRL+F`.
 
+* Updated Markdown CSS from VS Code's built-in Markdown preview.  This keeps
+  the appearance in sync with recent updates to the built-in Markdown preview.
+
 
 
 ## v0.16.0 (2024-01-16)
